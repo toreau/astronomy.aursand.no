@@ -20,10 +20,16 @@ switch (mode)
         break;
 
     case "heartbeat":
-        using (var initConn = Open(dbPath, readOnly: false))
+        try
         {
+            using var initConn = Open(dbPath, readOnly: false);
             Exec(initConn, "PRAGMA journal_mode=WAL;");
             Exec(initConn, "CREATE TABLE IF NOT EXISTS heartbeat (id INTEGER PRIMARY KEY, at_utc TEXT NOT NULL);");
+            Console.WriteLine("worker: schema ok");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"worker: schema init FAIL {ex.Message.Split('\n')[0]}");
         }
         while (true)
         {
