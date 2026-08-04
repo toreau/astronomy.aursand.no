@@ -6,10 +6,7 @@ COPY src/Astronomy.Api/ .
 RUN dotnet publish -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --uid 10001 --create-home appuser
+RUN useradd --uid 10001 --create-home appuser
 USER appuser
 WORKDIR /app
 COPY --from=build /out .
