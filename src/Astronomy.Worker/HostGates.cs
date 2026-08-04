@@ -24,6 +24,8 @@ public static class HostGates
                 var url = $"https://ssd.jpl.nasa.gov/api/horizons.api?format=text&COMMAND='{id}'&OBJ_DATA='NO'&MAKE_EPHEM='YES'&EPHEM_TYPE='OBSERVER'&CENTER='500@399'&START_TIME='1900-01-01'&STOP_TIME='2100-01-01'&STEP_SIZE='30d'&QUANTITIES='1,2,9'&CSV_FORMAT='YES'&ANG_FORMAT='DEG'&CAL_FORMAT='CAL'&EXTRA_PREC='NO'";
                 var text = await Http.GetStringAsync(url);
                 var rows = ParseHorizons(text);
+                if (rows.Count == 0)
+                    Console.WriteLine($"fixtures: {name} RAW SAMPLE: {text[..Math.Min(400, text.Length)].Replace('\n', ' ')}");
                 var path = Path.Combine(outDir, $"horizons_{name}.csv");
                 await File.WriteAllLinesAsync(path, rows.Select(r => string.Join(',', r)));
                 Console.WriteLine($"fixtures: {name,-8} {rows.Count,5} rows -> {path}");
