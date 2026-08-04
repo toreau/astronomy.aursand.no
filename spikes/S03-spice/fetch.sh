@@ -29,6 +29,12 @@ if [ ! -d "$VENDOR_DIR/cspice" ]; then
   echo "cloning CSPICE source mirror (arturania/cspice, sparse) ..."
   git clone --depth 1 --filter=blob:none --sparse \
     https://github.com/arturania/cspice.git "$VENDOR_DIR/cspice"
-  git -C "$VENDOR_DIR/cspice" sparse-checkout set src kernels
+  git -C "$VENDOR_DIR/cspice" sparse-checkout set src include kernels
 fi
 echo "cspice source present at $VENDOR_DIR/cspice"
+
+if [ ! -d "$VENDOR_DIR/erfa" ]; then
+  echo "cloning ERFA (liberfa/erfa) ..."
+  git clone --depth 1 https://github.com/liberfa/erfa.git "$VENDOR_DIR/erfa"
+fi
+echo "erfa source present at $VENDOR_DIR/erfa"

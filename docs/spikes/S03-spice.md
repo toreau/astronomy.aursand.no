@@ -56,3 +56,33 @@ macOS 26.4 (arm64) host; container `linux/amd64` (Rosetta emulation — matches 
 - A4 ERFA compile + minimal `epv00` probe.
 - FK kernel acquisition (teme.tf / tod.tf / itrf93.tf) — mirrors or host.
 - Official NAIF build + checksum verification on host (S0.11).
+
+---
+
+## Phase A addendum (2026-08-04) — A2 + A4 complete; S0.3 Phase A → **PASS**
+
+### A2 — precision cross-check vs independent evaluator (gate ≤ 0.5″): **PASS**
+
+Method: `crosscheck/refgen.py` (skyfield + jplephem, MIT, pure Python, pinned at execution) reads the same local `de440s.bsp` — an independent Chebyshev evaluator vs CSPICE, no network (avoids libephemeris's skyfield-data dependency which downloads JPL kernels at runtime). 288 rows = 6 bodies × 48 epochs (2020–2030 @ 90 d + J2000, 2016-12-31 leap-second, 2026-08-04 stress dates). C# probe compares CSPICE `spkpos` ("J2000", "LT") vs skyfield astrometric (ICRS).
+
+| Body | N | mean sep | max sep | dist rel max |
+|---|---|---|---|---|
+| sun | 48 | 0.0003″ | 0.0031″ | 9.8e-14 |
+| moon | 48 | 0.0006″ | 0.0031″ | 1.0e-8 |
+| venus | 48 | 0.0005″ | 0.0031″ | 1.4e-8 |
+| mars (barycenter) | 48 | 0.0005″ | 0.0031″ | 4.0e-9 |
+| jupiter (barycenter) | 48 | 0.0004″ | 0.0031″ | 1.1e-10 |
+| saturn (barycenter) | 48 | 0.0001″ | 0.0031″ | 2.4e-11 |
+
+**Max 0.0031″ — 160× inside the 0.5″ gate.** The flat 0.0031″ plateau across bodies is the UTC→TDB conversion boundary (skyfield leap-table vs CSPICE `utc2et`), not evaluator error. Semantics check: CSPICE "LT+S" (apparent) vs skyfield astrometric for the Sun = 20.85″ ≈ annual aberration ✓. Note: `de440s.bsp` contains only barycenter segments for Mars/Jupiter/Saturn (no 499/599/699 center segments) — both evaluators must use barycenter names; CSPICE "MARS" = 499 ≠ segment 4 (SPKINSUFFDATA), use "MARS BARYCENTER" etc. Reference CSV committed: `spikes/S03-spice/fixtures/de440s_crosscheck.csv` (regenerated via `refgen.py` in-container).
+
+### A4 — ERFA fallback (gate ≤ 1″): **PASS**
+
+liberfa/erfa 2.0.1 (BSD-3, pushed 2026-07) built in-container via meson/ninja (255 targets, ~5 s); `liberfa.so.1.8.1` linked. P/Invoke `eraEpv00` (geocentric Sun from Earth heliocentric) vs CSPICE `spkpos` "NONE" at 48 TT epochs: **max 0.0097″ — 100× inside gate.** Bonus: `eraDtdb` (full Fairhead–Bretagnon) vs skyfield TDB−TT: max |diff| = 33 µs — confirms the simplified 2-term model's error band (S0.5) and gives the reference tier a full-series TDB routine.
+
+### A3.5 — FK frame kernels: NOT FOUND (deferred)
+
+GitHub code search for `teme.tf`/`tod.tf` mirrors: none usable. TOD/TEME/ITRF93 frame kernels remain on the S0.11 host-fetch list (NAIF reachability permitting); until then the rotation chain is validated with J2000/ECLIPJ2000.
+
+### Phase A verdict: **PASS** (A1 build+load, A2 ≤ 0.003″ cross-check, A3 lock-mitigated threading, A4 ≤ 0.01″ ERFA)
+Host gate B (Horizons ≤ 1″ on amd64 + NAIF reachability + official-build thread test) rides S0.11. Note: with CSPICE ≡ skyfield at 0.003″ on the same kernel, the Horizons gate now primarily validates the *kernel data* (dual-mirror sha256 already matched; NAIF checksum still to be confirmed from the host).
