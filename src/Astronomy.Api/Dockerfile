@@ -1,9 +1,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY src/Astronomy.Api/Astronomy.Api.csproj .
-RUN dotnet restore
-COPY src/Astronomy.Api/ .
-RUN dotnet publish -c Release -o /out
+COPY src/ .
+RUN dotnet restore Astronomy.Api/Astronomy.Api.csproj
+RUN dotnet publish Astronomy.Api/Astronomy.Api.csproj -c Release -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 RUN useradd --uid 10001 --create-home appuser
