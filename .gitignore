@@ -1,0 +1,19 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+
+# Local SQLite data
+*.db
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store
+
+# Spike scratch (never commit)
+spikes/*/bin/
+spikes/*/obj/
