@@ -22,14 +22,23 @@ public class DatasetRegistry : Astronomy.SharedKernel.Datasets.IDatasetRegistry
     public async Task<int> StageAsync(string datasetName, string version, string checksum, CancellationToken ct = default)
     {
         using var ctx = _contextFactory();
-        ctx.Datasets.Add(new DatasetRecord
+        var existing = await ctx.Datasets.FirstOrDefaultAsync(d => d.Name == datasetName && d.Version == version, ct);
+        if (existing is null)
         {
-            Name = datasetName,
-            Version = version,
-            Status = "staged",
-            Checksum = checksum,
-            CreatedAtUtc = DateTimeOffset.UtcNow,
-        });
+            ctx.Datasets.Add(new DatasetRecord
+            {
+                Name = datasetName,
+                Version = version,
+                Status = "staged",
+                Checksum = checksum,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+            });
+        }
+        else
+        {
+            existing.Status = "staged";
+            existing.Checksum = checksum;
+        }
         ctx.AuditEntries.Add(new AuditEntry
         {
             Action = "stage",
