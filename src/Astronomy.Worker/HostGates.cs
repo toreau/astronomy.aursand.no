@@ -106,10 +106,10 @@ public static class HostGates
                 var rot = CosineKitty.Astronomy.Rotation_EQJ_EQD(t);
                 var vDofd = CosineKitty.Astronomy.RotateVector(rot, vD);
                 var eqD = CosineKitty.Astronomy.EquatorFromVector(vDofd);
-                sepsJ.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), eqJ.ra, eqJ.dec));
+                sepsJ.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), eqJ.ra * 15.0, eqJ.dec));
                 if (n == 0)
-                    Console.WriteLine($"compare: {name} first row utc={utc:O} hz_ra={p[1]} hz_dec={p[2]} engine_ra={eqJ.ra:F6} engine_dec={eqJ.dec:F6} t.tt={t.tt:F6}");
-                sepsD.Add(Sep(double.Parse(p[3], CultureInfo.InvariantCulture), double.Parse(p[4], CultureInfo.InvariantCulture), eqD.ra, eqD.dec));
+                    Console.WriteLine($"compare: {name} first row utc={utc:O} hz_ra={p[1]} hz_dec={p[2]} engine_ra_hours={eqJ.ra:F6} engine_ra_deg={eqJ.ra * 15.0:F6} engine_dec={eqJ.dec:F6}");
+                sepsD.Add(Sep(double.Parse(p[3], CultureInfo.InvariantCulture), double.Parse(p[4], CultureInfo.InvariantCulture), eqD.ra * 15.0, eqD.dec));
                 n++;
             }
             Console.WriteLine($"compare: {name,-8} N={n,5} J2000-astrometric mean={sepsJ.Average(),7:F1}\" max={sepsJ.Max(),7:F1}\" | of-date-apparent mean={sepsD.Average(),7:F1}\" max={sepsD.Max(),7:F1}\" (consumer gate <= 60\")");
