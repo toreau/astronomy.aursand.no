@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Design;
 
 namespace Astronomy.Modules.Satellites.Application;
 
@@ -27,6 +28,16 @@ public class SatelliteDbContext : DbContext
     }
 }
 
+public class SatelliteDesignFactory : IDesignTimeDbContextFactory<SatelliteDbContext>
+{
+    public SatelliteDbContext CreateDbContext(string[] args)
+    {
+        var options = new DbContextOptionsBuilder<SatelliteDbContext>()
+            .UseSqlite("Data Source=satellite-design.db").Options;
+        return new SatelliteDbContext(options);
+    }
+}
+
 internal static class SatelliteStore
 {
     public static SatelliteDbContext CreateContext(string dbPath)
@@ -45,7 +56,7 @@ internal static class SatelliteStore
     public static void EnsureSchema(string dbPath)
     {
         using var ctx = CreateContext(dbPath);
-        ctx.Database.EnsureCreated();
+        ctx.Database.Migrate();
     }
 
     public static void WriteElements(string dbPath, string version, IReadOnlyList<OrbitalElementRow> rows)
