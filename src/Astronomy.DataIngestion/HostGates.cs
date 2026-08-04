@@ -14,6 +14,33 @@ public static class HostGates
         ("jupiter", 599), ("saturn", 699),
     };
 
+
+    public static async Task ProbeAsync()
+    {
+        var targets = new (string Name, string Url)[]
+        {
+            ("jpl-ssd", "https://ssd.jpl.nasa.gov/"),
+            ("jpl-naif", "https://naif.jpl.nasa.gov/"),
+            ("usno-ser7", "https://maia.usno.navy.mil/ser7/ser7.dat"),
+            ("celestrak", "https://celestrak.org/"),
+            ("cds", "https://cdsarc.cds.unistra.fr/"),
+        };
+        using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        foreach (var (name, url) in targets)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                using var resp = await hc.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                Console.WriteLine($"probe: {name,-12} {url,-50} HTTP {(int)resp.StatusCode} in {sw.Elapsed.TotalSeconds:F1}s");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"probe: {name,-12} {url,-50} FAIL {ex.Message.Split('\n')[0]} in {sw.Elapsed.TotalSeconds:F1}s");
+            }
+        }
+    }
+
     public static async Task<int> FetchFixturesAsync(string outDir)
     {
         Directory.CreateDirectory(outDir);

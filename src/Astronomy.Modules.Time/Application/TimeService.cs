@@ -52,10 +52,10 @@ internal sealed class TimeService : ITimeService
 
 public static class TimeModuleRegistrar
 {
-    public static IServiceCollection AddTimeModule(this IServiceCollection services, TimeScaleConverter converter)
+    public static IServiceCollection AddTimeModule(this IServiceCollection services)
     {
-        services.AddSingleton(converter);
-        services.AddSingleton<ITimeService, TimeService>();
+        services.AddSingleton<ITimeService>(sp =>
+            new TimeService(sp.GetRequiredService<TimeScaleConverter>(), sp.GetRequiredService<IDatasetCatalog>()));
         return services;
     }
 }
