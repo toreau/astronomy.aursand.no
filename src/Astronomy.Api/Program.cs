@@ -70,7 +70,7 @@ app.UseExceptionHandler(err => err.Run(async context =>
         title = ex?.GetType().Name,
         status,
         detail = ex?.Message,
-        instance = "/" + context.Request.Path,
+        instance = context.Request.Path.ToString(),
         code,
     }));
 }));
