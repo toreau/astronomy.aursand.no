@@ -20,6 +20,11 @@ switch (mode)
         break;
 
     case "heartbeat":
+        using (var initConn = Open(dbPath, readOnly: false))
+        {
+            Exec(initConn, "PRAGMA journal_mode=WAL;");
+            Exec(initConn, "CREATE TABLE IF NOT EXISTS heartbeat (id INTEGER PRIMARY KEY, at_utc TEXT NOT NULL);");
+        }
         while (true)
         {
             try
