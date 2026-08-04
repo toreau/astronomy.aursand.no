@@ -162,13 +162,25 @@ public static class HostGates
             Console.WriteLine($"naif: fk listing FAIL {ex.Message.Split('\n')[0]}");
         }
 
+        try
+        {
+            var fkPlanets = await hc.GetStringAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/");
+            var tfNames = System.Text.RegularExpressions.Regex.Matches(fkPlanets, @"href=""([^""]+\.tf)""")
+                .Select(m => m.Groups[1].Value).Take(20).ToList();
+            Console.WriteLine($"naif: fk/planets .tf files: {string.Join(", ", tfNames)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: fk/planets listing FAIL {ex.Message.Split('\n')[0]}");
+        }
+
         var downloads = new (string Name, string Url)[]
         {
             ("naif0012.tls", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls"),
             ("pck00010.tpc", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc"),
             ("teme.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/teme.tf"),
             ("tod.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/tod.tf"),
-            ("itrf93.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/itrf93.tf"),
+            ("earth_fixed.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_fixed.tf"),
         };
         foreach (var (name, url) in downloads)
         {
