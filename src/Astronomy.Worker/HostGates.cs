@@ -180,7 +180,7 @@ public static class HostGates
             ("pck00010.tpc", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00010.tpc"),
             ("teme.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/teme.tf"),
             ("tod.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/tod.tf"),
-            ("earth_fixed.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_fixed.tf"),
+            ("earth_assoc_itrf93.tf", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/planets/earth_assoc_itrf93.tf"),
         };
         foreach (var (name, url) in downloads)
         {
