@@ -21,3 +21,7 @@ spikes/*/obj/
 # SPICE kernels and vendored sources (fetched by scripts/spike fetch, sha256-pinned)
 spikes/S03-spice/vendor/
 spikes/S03-spice/fixtures/kernels/
+
+# BenchmarkDotNet artifacts
+BenchmarkDotNet.Artifacts/
+spikes/*/BenchmarkDotNet.Artifacts/
