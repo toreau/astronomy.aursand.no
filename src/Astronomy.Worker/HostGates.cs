@@ -49,19 +49,28 @@ public static class HostGates
     private static List<string[]> ParseHorizons(string text)
     {
         var rows = new List<string[]>();
-        var inData = false;
-        foreach (var raw in text.Split('\n'))
+        var soe = text.IndexOf("$$SOE");
+        var eoe = text.IndexOf("$$EOE", soe);
+        if (soe < 0 || eoe < 0) return rows;
+        var body = text[(soe + 5)..eoe];
+        var tokens = body.Split(',').Select(t => t.Trim().Trim('"')).ToArray();
+        var i = 0;
+        while (i < tokens.Length)
         {
-            var line = raw.Trim();
-            if (line == "$$SOE") { inData = true; continue; }
-            if (line == "$$EOE") break;
-            if (!inData || line.Length == 0) continue;
-            var cols = line.Split(',').Select(c => c.Trim().Trim('"')).ToArray();
-            if (cols.Length < 6) continue;
-            if (!DateTime.TryParseExact(cols[0], "yyyy-MMM-dd HH:mm:ss.ffff",
+            if (!DateTime.TryParseExact(tokens[i], "yyyy-MMM-dd HH:mm",
                     CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var utc))
+            {
+                i++;
                 continue;
-            rows.Add(new[] { utc.ToString("O"), cols[1], cols[2], cols[3], cols[4], cols[5] });
+            }
+            if (i + 7 >= tokens.Length) break;
+            if (tokens[i + 1].Length != 0 || tokens[i + 2].Length != 0) { i++; continue; }
+            if (!double.TryParse(tokens[i + 3], NumberStyles.Float, CultureInfo.InvariantCulture, out var ra1)) { i++; continue; }
+            var dec1 = double.Parse(tokens[i + 4], CultureInfo.InvariantCulture);
+            var ra2 = double.Parse(tokens[i + 5], CultureInfo.InvariantCulture);
+            var dec2 = double.Parse(tokens[i + 6], CultureInfo.InvariantCulture);
+            rows.Add(new[] { utc.ToString("O"), ra1.ToString("F6", CultureInfo.InvariantCulture), dec1.ToString("F6", CultureInfo.InvariantCulture), ra2.ToString("F6", CultureInfo.InvariantCulture), dec2.ToString("F6", CultureInfo.InvariantCulture) });
+            i += 8;
         }
         return rows;
     }
@@ -84,12 +93,11 @@ public static class HostGates
             };
             var sepsJ = new List<double>();
             var sepsD = new List<double>();
-            var distRel = new List<double>();
             var n = 0;
             foreach (var line in File.ReadAllLines(path))
             {
                 var p = line.Split(',');
-                if (p.Length < 6) continue;
+                if (p.Length < 5) continue;
                 var utc = DateTime.Parse(p[0], null, DateTimeStyles.RoundtripKind);
                 var t = new CosineKitty.AstroTime(utc);
                 var vJ = CosineKitty.Astronomy.GeoVector(body, t, CosineKitty.Aberration.None);
@@ -100,10 +108,9 @@ public static class HostGates
                 var eqD = CosineKitty.Astronomy.EquatorFromVector(vDofd);
                 sepsJ.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), eqJ.ra, eqJ.dec));
                 sepsD.Add(Sep(double.Parse(p[3], CultureInfo.InvariantCulture), double.Parse(p[4], CultureInfo.InvariantCulture), eqD.ra, eqD.dec));
-                distRel.Add(Math.Abs(eqD.dist - double.Parse(p[5], CultureInfo.InvariantCulture)) / double.Parse(p[5], CultureInfo.InvariantCulture));
                 n++;
             }
-            Console.WriteLine($"compare: {name,-8} N={n,5} J2000-astrometric mean={sepsJ.Average(),7:F1}\" max={sepsJ.Max(),7:F1}\" | of-date mean={sepsD.Average(),7:F1}\" max={sepsD.Max(),7:F1}\" | dist rel max={distRel.Max():E2}");
+            Console.WriteLine($"compare: {name,-8} N={n,5} J2000-astrometric mean={sepsJ.Average(),7:F1}\" max={sepsJ.Max(),7:F1}\" | of-date-apparent mean={sepsD.Average(),7:F1}\" max={sepsD.Max(),7:F1}\" (consumer gate <= 60\")");
         }
         return 0;
     }
