@@ -13,4 +13,10 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Astronomy.Infrastructure\Astronomy.Infrastructure.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Satellites\Astronomy.Modules.Satellites.csproj" />
+    <ProjectReference Include="..\Astronomy.SharedKernel\Astronomy.SharedKernel.csproj" />
+  </ItemGroup>
+
 </Project>

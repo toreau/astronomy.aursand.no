@@ -1,0 +1,20 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Astronomy.Api/Astronomy.Api.csproj" />
+    <Project Path="src/Astronomy.DataIngestion/Astronomy.DataIngestion.csproj" />
+    <Project Path="src/Astronomy.Infrastructure/Astronomy.Infrastructure.csproj" />
+    <Project Path="src/Astronomy.Modules.Almanac/Astronomy.Modules.Almanac.csproj" />
+    <Project Path="src/Astronomy.Modules.Calendars/Astronomy.Modules.Calendars.csproj" />
+    <Project Path="src/Astronomy.Modules.Ephemeris/Astronomy.Modules.Ephemeris.csproj" />
+    <Project Path="src/Astronomy.Modules.Satellites/Astronomy.Modules.Satellites.csproj" />
+    <Project Path="src/Astronomy.Modules.Stars/Astronomy.Modules.Stars.csproj" />
+    <Project Path="src/Astronomy.Modules.Time/Astronomy.Modules.Time.csproj" />
+    <Project Path="src/Astronomy.SharedKernel/Astronomy.SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Astronomy.ApiTests/Astronomy.ApiTests.csproj" />
+    <Project Path="tests/Astronomy.ArchitectureTests/Astronomy.ArchitectureTests.csproj" />
+    <Project Path="tests/Astronomy.IntegrationTests/Astronomy.IntegrationTests.csproj" />
+    <Project Path="tests/Astronomy.UnitTests/Astronomy.UnitTests.csproj" />
+  </Folder>
+</Solution>

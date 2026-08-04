@@ -7,8 +7,23 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Astronomy.Infrastructure\Astronomy.Infrastructure.csproj" />
+    <ProjectReference Include="..\Astronomy.SharedKernel\Astronomy.SharedKernel.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Calendars\Astronomy.Modules.Calendars.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Time\Astronomy.Modules.Time.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Ephemeris\Astronomy.Modules.Ephemeris.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Stars\Astronomy.Modules.Stars.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Satellites\Astronomy.Modules.Satellites.csproj" />
+    <ProjectReference Include="..\Astronomy.Modules.Almanac\Astronomy.Modules.Almanac.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
+  </ItemGroup>
 </Project>

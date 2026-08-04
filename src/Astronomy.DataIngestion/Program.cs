@@ -20,13 +20,13 @@ switch (mode)
         break;
 
     case "fixtures":
-        return await Astronomy.Worker.HostGates.FetchFixturesAsync(args.Length > 1 ? args[1] : "/data/fixtures");
+        return await Astronomy.DataIngestion.HostGates.FetchFixturesAsync(args.Length > 1 ? args[1] : "/data/fixtures");
 
     case "compare":
-        return Astronomy.Worker.HostGates.CompareFixtures(args.Length > 1 ? args[1] : "/data/fixtures");
+        return Astronomy.DataIngestion.HostGates.CompareFixtures(args.Length > 1 ? args[1] : "/data/fixtures");
 
     case "naif":
-        return await Astronomy.Worker.HostGates.NaifAsync(args.Length > 1 ? args[1] : "/data/kernels");
+        return await Astronomy.DataIngestion.HostGates.NaifAsync(args.Length > 1 ? args[1] : "/data/kernels");
 
     case "heartbeat":
         try
@@ -59,7 +59,7 @@ switch (mode)
         }
 
     default:
-        Console.WriteLine("usage: Astronomy.Worker <heartbeat|migrate|probe|fixtures|compare|naif>");
+        Console.WriteLine("usage: Astronomy.DataIngestion <heartbeat|migrate|probe|fixtures|compare|naif>");
         return 1;
 }
 return 0;

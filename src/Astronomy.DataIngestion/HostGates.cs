@@ -2,7 +2,7 @@ using System.Globalization;
 using CosineKitty;
 using System.Security.Cryptography;
 
-namespace Astronomy.Worker;
+namespace Astronomy.DataIngestion;
 
 public static class HostGates
 {
