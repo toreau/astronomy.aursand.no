@@ -107,6 +107,8 @@ public static class HostGates
                 var vDofd = CosineKitty.Astronomy.RotateVector(rot, vD);
                 var eqD = CosineKitty.Astronomy.EquatorFromVector(vDofd);
                 sepsJ.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), eqJ.ra, eqJ.dec));
+                if (n == 0)
+                    Console.WriteLine($"compare: {name} first row utc={utc:O} hz_ra={p[1]} hz_dec={p[2]} engine_ra={eqJ.ra:F6} engine_dec={eqJ.dec:F6} t.tt={t.tt:F6}");
                 sepsD.Add(Sep(double.Parse(p[3], CultureInfo.InvariantCulture), double.Parse(p[4], CultureInfo.InvariantCulture), eqD.ra, eqD.dec));
                 n++;
             }
