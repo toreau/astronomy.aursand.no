@@ -150,6 +150,18 @@ public static class HostGates
         Console.WriteLine($"naif: expected (dual-mirror, S0.3) = c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2 match={sha == "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2"}");
         await File.WriteAllBytesAsync(kernelPath, data);
 
+        try
+        {
+            var fkListing = await hc.GetStringAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/fk/satellites/");
+            var tfNames = System.Text.RegularExpressions.Regex.Matches(fkListing, @"href=""([^""]+\.tf)""")
+                .Select(m => m.Groups[1].Value).Take(20).ToList();
+            Console.WriteLine($"naif: fk/satellites .tf files: {string.Join(", ", tfNames)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: fk listing FAIL {ex.Message.Split('\n')[0]}");
+        }
+
         var downloads = new (string Name, string Url)[]
         {
             ("naif0012.tls", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls"),
