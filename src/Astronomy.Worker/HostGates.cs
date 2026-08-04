@@ -25,7 +25,12 @@ public static class HostGates
                 var text = await Http.GetStringAsync(url);
                 var rows = ParseHorizons(text);
                 if (rows.Count == 0)
-                    Console.WriteLine($"fixtures: {name} RAW SAMPLE: {text[..Math.Min(400, text.Length)].Replace('\n', ' ')}");
+                {
+                    var head = text[..Math.Min(700, text.Length)];
+                    var tail = text.Length > 700 ? text[^300..] : "";
+                    Console.WriteLine($"fixtures: {name} SOE={(text.Contains("$$SOE") ? "yes" : "no")} HEAD: {head.Replace('\n', ' ')}");
+                    Console.WriteLine($"fixtures: {name} TAIL: {tail.Replace('\n', ' ')}");
+                }
                 var path = Path.Combine(outDir, $"horizons_{name}.csv");
                 await File.WriteAllLinesAsync(path, rows.Select(r => string.Join(',', r)));
                 Console.WriteLine($"fixtures: {name,-8} {rows.Count,5} rows -> {path}");
