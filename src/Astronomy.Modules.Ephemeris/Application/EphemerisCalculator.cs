@@ -14,6 +14,13 @@ internal sealed class EphemerisCalculator
     {
         "sun" => Body.Sun,
         "moon" => Body.Moon,
+        "mercury" => Body.Mercury,
+        "venus" => Body.Venus,
+        "mars" => Body.Mars,
+        "jupiter" => Body.Jupiter,
+        "saturn" => Body.Saturn,
+        "uranus" => Body.Uranus,
+        "neptune" => Body.Neptune,
         _ => throw new ArgumentException($"unsupported body '{body.Name}'"),
     };
 
@@ -87,6 +94,37 @@ internal sealed class EphemerisCalculator
     {
         var info = Astr.Illumination(Body.Moon, new AstroTime(utc.UtcDateTime));
         return (info.phase_fraction, info.phase_angle);
+    }
+
+    public (double Fraction, double PhaseAngleDeg) IlluminationFor(BodyId body, DateTimeOffset utc)
+    {
+        var info = Astr.Illumination(ToEngineBody(body), new AstroTime(utc.UtcDateTime));
+        return (info.phase_fraction, info.phase_angle);
+    }
+
+    public (double ElongationDeg, string Visibility, double EclipticSeparationDeg) Elongation(BodyId body, DateTimeOffset utc)
+    {
+        var info = Astr.Elongation(ToEngineBody(body), new AstroTime(utc.UtcDateTime));
+        return (info.elongation, info.visibility.ToString(), info.ecliptic_separation);
+    }
+
+    public string ConstellationOf(BodyId body, DateTimeOffset utc)
+    {
+        var eq = GeocentricEquatorial(body, utc, apparent: false);
+        var info = Astr.Constellation(eq.RaDeg / 15.0, eq.DecDeg);
+        return info.Name;
+    }
+
+    public DateTimeOffset? NextRelativeLongitude(BodyId body, double targetRelativeLongitudeDeg, DateTimeOffset from)
+    {
+        var found = Astr.SearchRelativeLongitude(ToEngineBody(body), targetRelativeLongitudeDeg, new AstroTime(from.UtcDateTime));
+        return found.ToUtcDateTime();
+    }
+
+    public DateTimeOffset? NextMaxElongation(BodyId body, DateTimeOffset from)
+    {
+        var found = Astr.SearchMaxElongation(ToEngineBody(body), new AstroTime(from.UtcDateTime));
+        return found.time.ToUtcDateTime();
     }
 
     public static string MoonPhaseName(int quarter) => quarter switch

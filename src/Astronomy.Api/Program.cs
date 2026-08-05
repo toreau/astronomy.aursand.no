@@ -182,6 +182,40 @@ app.MapGet("/api/v1/ephemeris/moon/phases", async (
     return Results.Ok(result);
 });
 
+app.MapGet("/api/v1/ephemeris/{body}/visibility", async (
+    string body, string? time, double? latitude, double? longitude, double? elevationMeters, string? precision,
+    IEphemerisService service, CancellationToken ct, HttpContext context) =>
+{
+    if (!BodyId.TryParse(body, out var bodyId))
+        throw new ArgumentException($"unknown body '{body}'");
+    var result = await service.GetVisibilityAsync(bodyId, ParseTime(time),
+        ObserverLocationFrom(latitude, longitude, elevationMeters), ParsePrecision(precision), ct);
+    context.Response.Headers.CacheControl = "no-cache";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/ephemeris/events", async (
+    string? from, string? to, string? bodies, string? types,
+    IEphemerisService service, CancellationToken ct, HttpContext context) =>
+{
+    if (!BodyId.TryParseList(bodies ?? "jupiter", out var bodyList))
+        throw new ArgumentException($"unknown body in '{bodies}'");
+    var typeList = new List<EventType>();
+    foreach (var part in (types ?? "opposition").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    {
+        typeList.Add(part.ToLowerInvariant() switch
+        {
+            "opposition" => EventType.Opposition,
+            "conjunction" => EventType.Conjunction,
+            "max-elongation" or "maxelongation" => EventType.MaxElongation,
+            _ => throw new ArgumentException($"unknown event type '{part}'"),
+        });
+    }
+    var result = await service.GetEventsAsync(ParseTime(from), ParseTime(to), bodyList, typeList, ct);
+    context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(result);
+});
+
 app.MapGet("/api/v1/almanac/daily", async (
     string date, double? latitude, double? longitude, double? elevationMeters, string? precision,
     IAlmanacService service, CancellationToken ct) =>
@@ -193,6 +227,19 @@ app.MapGet("/api/v1/almanac/daily", async (
         elevationMeters ?? 0,
         precision ?? "consumer");
     return Results.Ok(await service.GetDailyAsync(request, ct));
+});
+
+app.MapGet("/api/v1/almanac/monthly", async (
+    string month, double? latitude, double? longitude, double? elevationMeters,
+    IAlmanacService service, CancellationToken ct, HttpContext context) =>
+{
+    if (!DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.None, out var parsed))
+        throw new ArgumentException($"invalid month '{month}' (expected yyyy-MM)");
+    var result = await service.GetMonthlyAsync(parsed.Year, parsed.Month,
+        ObserverLocationFrom(latitude, longitude, elevationMeters), ct);
+    context.Response.Headers.CacheControl = "public, max-age=900";
+    return Results.Ok(result);
 });
 
 app.MapOpenApi();

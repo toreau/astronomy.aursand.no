@@ -27,6 +27,18 @@ public sealed record MoonSection(
     double IlluminationFraction,
     CalculationMetadata Metadata);
 
+public sealed record PlanetSectionEntry(
+    string Body,
+    DateTimeOffset? RiseUtc,
+    DateTimeOffset? TransitUtc,
+    DateTimeOffset? SetUtc,
+    double Magnitude,
+    double ElongationDeg,
+    string Constellation,
+    bool VisibleTonight,
+    bool NakedEyeVisible,
+    CalculationMetadata Metadata);
+
 public sealed record DailyAlmanacRequest(
     DateOnly Date,
     double LatitudeDeg,
@@ -38,11 +50,39 @@ public sealed record DailyAlmanacResult(
     string Date,
     SunSection Sun,
     MoonSection Moon,
+    IReadOnlyList<PlanetSectionEntry> Planets,
+    CalculationMetadata Metadata);
+
+public sealed record MonthlyDayPlanetEntry(
+    string Body,
+    DateTimeOffset? RiseUtc,
+    DateTimeOffset? TransitUtc,
+    DateTimeOffset? SetUtc,
+    double Magnitude,
+    double ElongationDeg,
+    string Constellation);
+
+public sealed record MonthlyDayEntry(
+    string Date,
+    DateTimeOffset? SunRiseUtc,
+    DateTimeOffset? SunSetUtc,
+    DateTimeOffset? SolarNoonUtc,
+    DateTimeOffset? MoonRiseUtc,
+    DateTimeOffset? MoonSetUtc,
+    string MoonPhaseName,
+    IReadOnlyList<MonthlyDayPlanetEntry> Planets);
+
+public sealed record MonthlyAlmanacResult(
+    string Month,
+    string MagnitudeReferenceUtc,
+    IReadOnlyList<MonthlyDayEntry> Days,
+    IReadOnlyList<PlanetEvent> Events,
     CalculationMetadata Metadata);
 
 public interface IAlmanacService
 {
     Task<DailyAlmanacResult> GetDailyAsync(DailyAlmanacRequest request, CancellationToken ct);
+    Task<MonthlyAlmanacResult> GetMonthlyAsync(int year, int month, ObserverLocation observer, CancellationToken ct);
 }
 
 internal sealed class AlmanacService : IAlmanacService
@@ -66,7 +106,7 @@ internal sealed class AlmanacService : IAlmanacService
         var civil = await _ephemeris.GetTwilightAsync(request.Date, observer, TwilightType.Civil, precision, ct);
         var nautical = await _ephemeris.GetTwilightAsync(request.Date, observer, TwilightType.Nautical, precision, ct);
         var astronomical = await _ephemeris.GetTwilightAsync(request.Date, observer, TwilightType.Astronomical, precision, ct);
-        var noon = await _ephemeris.GetMoonIlluminationAsync(
+        var illumination = await _ephemeris.GetMoonIlluminationAsync(
             request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddHours(12), ct);
 
         var sunSection = new SunSection(
@@ -77,12 +117,75 @@ internal sealed class AlmanacService : IAlmanacService
             sun.Metadata);
         var moonSection = new MoonSection(
             moon.RiseUtc, moon.SetUtc, moon.TransitUtc,
-            noon.PhaseName, noon.IlluminationFraction, moon.Metadata);
+            illumination.PhaseName, illumination.IlluminationFraction, moon.Metadata);
+
+        var planets = new List<PlanetSectionEntry>();
+        var noon = request.Date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddHours(12);
+        foreach (var body in BodyId.Planets)
+        {
+            var riseSet = await _ephemeris.GetRiseSetAsync(body, request.Date, observer, precision, ct);
+            var visibility = await _ephemeris.GetVisibilityAsync(body, noon, observer, precision, ct);
+            planets.Add(new PlanetSectionEntry(
+                body.Name, riseSet.RiseUtc, riseSet.TransitUtc, riseSet.SetUtc,
+                visibility.Magnitude, visibility.ElongationDeg, visibility.Constellation ?? "",
+                visibility.VisibleTonight, visibility.NakedEyeVisible, riseSet.Metadata));
+        }
 
         var metadata = new CalculationMetadata(
             [new DatasetRef("tzdb", "2026c")],
             [new AlgorithmRef("almanac-composer", "1.0")], []);
-        return new DailyAlmanacResult(request.Date.ToString("yyyy-MM-dd"), sunSection, moonSection, metadata);
+        return new DailyAlmanacResult(request.Date.ToString("yyyy-MM-dd"), sunSection, moonSection, planets, metadata);
+    }
+
+    public async Task<MonthlyAlmanacResult> GetMonthlyAsync(int year, int month, ObserverLocation observer, CancellationToken ct)
+    {
+        var precision = PrecisionMode.Consumer;
+        var daysInMonth = DateTime.DaysInMonth(year, month);
+        var days = new List<MonthlyDayEntry>(daysInMonth);
+        var referenceUtc = "12:00:00Z";
+        var events = new List<PlanetEvent>();
+
+        for (var day = 1; day <= daysInMonth; day++)
+        {
+            var date = new DateOnly(year, month, day);
+            var noon = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddHours(12);
+
+            var sun = await _ephemeris.GetRiseSetAsync(BodyId.Sun, date, observer, precision, ct);
+            var moon = await _ephemeris.GetRiseSetAsync(BodyId.Moon, date, observer, precision, ct);
+            var illumination = await _ephemeris.GetMoonIlluminationAsync(noon, ct);
+
+            var planets = new List<MonthlyDayPlanetEntry>();
+            foreach (var body in BodyId.Planets)
+            {
+                var riseSet = await _ephemeris.GetRiseSetAsync(body, date, observer, precision, ct);
+                var visibility = await _ephemeris.GetVisibilityAsync(body, noon, observer, precision, ct);
+                planets.Add(new MonthlyDayPlanetEntry(
+                    body.Name, riseSet.RiseUtc, riseSet.TransitUtc, riseSet.SetUtc,
+                    visibility.Magnitude, visibility.ElongationDeg, visibility.Constellation ?? ""));
+            }
+
+            days.Add(new MonthlyDayEntry(
+                date.ToString("yyyy-MM-dd"),
+                sun.RiseUtc, sun.SetUtc, sun.TransitUtc,
+                moon.RiseUtc, moon.SetUtc, illumination.PhaseName,
+                planets));
+        }
+
+        var from = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero);
+        var to = from.AddMonths(1);
+        var monthEvents = await _ephemeris.GetEventsAsync(from, to,
+            BodyId.Planets.Where(p => p != BodyId.Mercury && p != BodyId.Venus).ToList(),
+            [EventType.Opposition, EventType.Conjunction], ct);
+        var innerEvents = await _ephemeris.GetEventsAsync(from, to,
+            [BodyId.Mercury, BodyId.Venus], [EventType.MaxElongation], ct);
+        events.AddRange(monthEvents.Events);
+        events.AddRange(innerEvents.Events);
+
+        var metadata = new CalculationMetadata(
+            [new DatasetRef("tzdb", "2026c")],
+            [new AlgorithmRef("almanac-composer", "1.0")], []);
+        return new MonthlyAlmanacResult($"{year:D4}-{month:D2}", referenceUtc, days,
+            events.OrderBy(e => e.Utc).ToList(), metadata);
     }
 
     private static PrecisionMode ParsePrecision(string precision) => precision.ToLowerInvariant() switch

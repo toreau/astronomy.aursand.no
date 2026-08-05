@@ -10,8 +10,8 @@ public static class HostGates
 
     private static readonly (string Name, int Id)[] Bodies =
     {
-        ("sun", 10), ("moon", 301), ("venus", 299), ("mars", 499),
-        ("jupiter", 599), ("saturn", 699),
+        ("sun", 10), ("moon", 301), ("mercury", 199), ("venus", 299), ("mars", 499),
+        ("jupiter", 599), ("saturn", 699), ("uranus", 799), ("neptune", 899),
     };
 
 

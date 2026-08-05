@@ -95,6 +95,69 @@ internal sealed class EphemerisService : IEphemerisService
             warnings);
     }
 
+    public Task<VisibilityResult> GetVisibilityAsync(BodyId body, DateTimeOffset time, ObserverLocation observer, PrecisionMode precision, CancellationToken ct)
+    {
+        if (body == BodyId.Sun || body == BodyId.Moon)
+            throw new ArgumentException($"visibility is not defined for '{body.Name}'");
+        var (magnitude, phaseAngle) = _calculator.IlluminationFor(body, time);
+        var (elongationDeg, visibility, _) = _calculator.Elongation(body, time);
+        var constellation = _calculator.ConstellationOf(body, time);
+        var (alt, az) = _calculator.Horizontal(body, time, observer, refraction: true);
+
+        var day = DateOnly.FromDateTime(time.UtcDateTime);
+        var sunset = _calculator.SearchRiseSet(BodyId.Sun, day, observer, rise: false);
+        var sunrise = _calculator.SearchRiseSet(BodyId.Sun, day, observer, rise: true);
+        var planetSet = _calculator.SearchRiseSet(body, day, observer, rise: false);
+        var planetRise = _calculator.SearchRiseSet(body, day, observer, rise: true);
+        var visibleTonight = (planetSet is not null && sunset is not null && planetSet > sunset)
+                          || (planetRise is not null && sunrise is not null && planetRise < sunrise);
+
+        return Task.FromResult(new VisibilityResult(
+            body.Name, magnitude, elongationDeg, visibility, constellation, alt, az,
+            visibleTonight, magnitude <= 6.5,
+            Metadata(precision, "visibility")));
+    }
+
+    public Task<EventsResult> GetEventsAsync(DateTimeOffset from, DateTimeOffset to, IReadOnlyList<BodyId> bodies, IReadOnlyList<EventType> types, CancellationToken ct)
+    {
+        if (to - from > TimeSpan.FromDays(366))
+            throw new ArgumentException("event search range exceeds 366 days");
+        var events = new List<PlanetEvent>();
+        foreach (var body in bodies)
+        {
+            foreach (var type in types)
+            {
+                if (type == EventType.MaxElongation && body != BodyId.Mercury && body != BodyId.Venus)
+                    throw new ArgumentException($"max-elongation is only defined for mercury and venus, not '{body.Name}'");
+                var t = from;
+                var guard = 0;
+                while (t < to && guard++ < 12)
+                {
+                    var candidates = type == EventType.MaxElongation
+                        ? new[] { _calculator.NextMaxElongation(body, t) }
+                        : new[]
+                        {
+                            _calculator.NextRelativeLongitude(body, 180.0, t),
+                            _calculator.NextRelativeLongitude(body, 0.0, t),
+                        };
+                    var found = candidates.Where(c => c is not null && c <= to)
+                        .OrderBy(c => c).FirstOrDefault();
+                    if (found is null) break;
+                    var (elongationDeg, _, _) = _calculator.Elongation(body, found.Value);
+                    var actualType = type == EventType.MaxElongation
+                        ? "max-elongation"
+                        : elongationDeg > 150 ? "opposition"
+                        : elongationDeg < 30 ? "conjunction"
+                        : "relative-longitude";
+                    events.Add(new PlanetEvent(body.Name, actualType, found.Value, elongationDeg,
+                        Metadata(PrecisionMode.Consumer, "events")));
+                    t = found.Value.AddMinutes(30);
+                }
+            }
+        }
+        return Task.FromResult(new EventsResult(from, to, events.OrderBy(e => e.Utc).ToList(), Metadata(PrecisionMode.Consumer, "events")));
+    }
+
     private static double QuarterFraction(int quarter) => quarter switch
     {
         0 => 0.0,
