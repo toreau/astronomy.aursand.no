@@ -412,11 +412,63 @@ public static class HostGates
             }
         }
 
-        await FetchIfMissingAsync("de441_part-1.bsp", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de441_part-1.bsp", 1_000_000_000);
-        await FetchIfMissingAsync("de441_part-2.bsp", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de441_part-2.bsp", 1_000_000_000);
+        // JPL's de441.bsp is ~3.3 GB; GetByteArrayAsync hits the 2 GB response
+        // buffer limit, so stream it in chunks. This is THE kernel Horizons uses.
+        async Task<bool> StreamFetchIfMissingAsync(string name, string url, long minBytes)
+        {
+            var path = Path.Combine(kernelDir, name);
+            var info = new FileInfo(path);
+            if (info.Exists && info.Length >= minBytes)
+            {
+                Console.WriteLine($"naif: {name,-26} present, skipping ({info.Length} bytes)");
+                return true;
+            }
+            try
+            {
+                using var resp = await hc.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                resp.EnsureSuccessStatusCode();
+                await using var src = await resp.Content.ReadAsStreamAsync();
+                var tmp = path + ".tmp";
+                await using (var dst = File.Create(tmp))
+                {
+                    await src.CopyToAsync(dst);
+                }
+                if (new FileInfo(tmp).Length < minBytes)
+                {
+                    File.Delete(tmp);
+                    Console.WriteLine($"naif: {name,-26} FAIL (download too small)");
+                    return false;
+                }
+                File.Move(tmp, path, overwrite: true);
+                Console.WriteLine($"naif: {name,-26} {new FileInfo(path).Length,10} bytes (streamed)");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"naif: {name,-26} FAIL {ex.Message.Split('\n')[0]}");
+                return false;
+            }
+        }
+
         await FetchIfMissingAsync("de440.bsp", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp", 50_000_000);
         await FetchIfMissingAsync("de440s_plus_MarsPC.bsp", "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s_plus_MarsPC.bsp", 50_000_000);
         await FetchIfMissingAsync("de440s.bsp", "https://raw.githubusercontent.com/arturania/cspice/master/kernels/spk/de440s.bsp", 30_000_000);
+
+        var de441Ok = await StreamFetchIfMissingAsync("de441.bsp", "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de441.bsp", 1_000_000_000);
+        if (de441Ok)
+        {
+            // de441.bsp (JPL single file) supersedes the NAIF two-part variant,
+            // which is a different (long-span, 14-object) product.
+            foreach (var part in new[] { "de441_part-1.bsp", "de441_part-2.bsp" })
+            {
+                var partPath = Path.Combine(kernelDir, part);
+                if (File.Exists(partPath))
+                {
+                    File.Delete(partPath);
+                    Console.WriteLine($"naif: {part,-26} deleted (superseded by de441.bsp)");
+                }
+            }
+        }
 
         try
         {

@@ -15,10 +15,10 @@ namespace Astronomy.Modules.Ephemeris.Reference;
 internal sealed class SpiceKernelPool
 {
     private static readonly object Sync = new();
-
     private static readonly string[] BaseKernels = ["naif0012.tls", "pck00010.tpc"];
     private static readonly string[] OptionalKernels = ["de440s_plus_MarsPC.bsp", "earth_assoc_itrf93.tf"];
     private static readonly string[] PlanetaryKernels = ["de441.bsp", "de440.bsp", "de440s.bsp"];
+
     public bool IsAvailable { get; }
 
     public string Reason { get; } = "kernel pool not initialized";
@@ -32,7 +32,9 @@ internal sealed class SpiceKernelPool
     /// BARYCENTER segments for the outer planets; the reference tier uses planet
     /// barycenters for Mars..Neptune unless de440s_plus_MarsPC.bsp is loaded
     /// (Mars center). Barycenter-vs-center offset is <= 0.05" for all outer planets.
-    /// de441 is preferred because Horizons computes its astrometric quantities from it.
+    /// de441.bsp (JPL ftp single file) is preferred because Horizons computes its
+    /// astrometric quantities from it. NOTE: NAIF's de441_part-1/2.bsp is a
+    /// different long-span product and is deliberately not supported.
     /// </summary>
     public DateTime CoverageStartUtc { get; } = new(1849, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -42,11 +44,6 @@ internal sealed class SpiceKernelPool
 
     private static string[]? ResolvePlanetaryKernels(string kernelDir)
     {
-        if (File.Exists(Path.Combine(kernelDir, "de441.bsp"))) return ["de441.bsp"];
-        if (File.Exists(Path.Combine(kernelDir, "de441_part-1.bsp")))
-            return File.Exists(Path.Combine(kernelDir, "de441_part-2.bsp"))
-                ? ["de441_part-1.bsp", "de441_part-2.bsp"]
-                : null;
         foreach (var name in PlanetaryKernels)
         {
             if (File.Exists(Path.Combine(kernelDir, name))) return [name];
