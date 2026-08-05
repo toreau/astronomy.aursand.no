@@ -368,9 +368,33 @@ public static class HostGates
         }
 
         const string JplFtpBase = "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/";
+        try
+        {
+            var bytes = await hc.GetByteArrayAsync(JplFtpBase + "de441.bsp");
+            var shaKernel = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            await File.WriteAllBytesAsync(Path.Combine(kernelDir, "de441.bsp"), bytes);
+            Console.WriteLine($"naif: de441.bsp {bytes.Length,10} bytes sha256={shaKernel}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: de441.bsp (jpl ftp) FAIL {ex.Message.Split('\n')[0]} - trying NAIF parts");
+            foreach (var part in new[] { "de441_part-1.bsp", "de441_part-2.bsp" })
+            {
+                try
+                {
+                    var partBytes = await hc.GetByteArrayAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/" + part);
+                    await File.WriteAllBytesAsync(Path.Combine(kernelDir, part), partBytes);
+                    Console.WriteLine($"naif: {part} {partBytes.Length,10} bytes sha256={Convert.ToHexString(SHA256.HashData(partBytes)).ToLowerInvariant()}");
+                }
+                catch (Exception ex2)
+                {
+                    Console.WriteLine($"naif: {part} FAIL {ex2.Message.Split('\n')[0]}");
+                }
+            }
+        }
+
         foreach (var (name, url) in new[]
         {
-            ("de441.bsp", JplFtpBase + "de441.bsp"),
             ("de440s_plus_MarsPC.bsp", JplFtpBase + "de440s_plus_MarsPC.bsp"),
             ("de440.bsp", JplFtpBase + "de440.bsp"),
         })

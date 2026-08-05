@@ -19,7 +19,6 @@ internal sealed class SpiceKernelPool
     private static readonly string[] BaseKernels = ["naif0012.tls", "pck00010.tpc"];
     private static readonly string[] OptionalKernels = ["de440s_plus_MarsPC.bsp", "earth_assoc_itrf93.tf"];
     private static readonly string[] PlanetaryKernels = ["de441.bsp", "de440.bsp", "de440s.bsp"];
-
     public bool IsAvailable { get; }
 
     public string Reason { get; } = "kernel pool not initialized";
@@ -41,6 +40,20 @@ internal sealed class SpiceKernelPool
 
     public bool HasKernel(string name) => KernelVersions.ContainsKey(name);
 
+    private static string[]? ResolvePlanetaryKernels(string kernelDir)
+    {
+        if (File.Exists(Path.Combine(kernelDir, "de441.bsp"))) return ["de441.bsp"];
+        if (File.Exists(Path.Combine(kernelDir, "de441_part-1.bsp")))
+            return File.Exists(Path.Combine(kernelDir, "de441_part-2.bsp"))
+                ? ["de441_part-1.bsp", "de441_part-2.bsp"]
+                : null;
+        foreach (var name in PlanetaryKernels)
+        {
+            if (File.Exists(Path.Combine(kernelDir, name))) return [name];
+        }
+        return null;
+    }
+
     public SpiceKernelPool(string kernelDir)
     {
         if (!Directory.Exists(kernelDir))
@@ -49,13 +62,13 @@ internal sealed class SpiceKernelPool
             return;
         }
         var versions = new Dictionary<string, string>();
-        var planetKernel = PlanetaryKernels.FirstOrDefault(k => File.Exists(Path.Combine(kernelDir, k)));
-        if (planetKernel is null)
+        var planetKernels = ResolvePlanetaryKernels(kernelDir);
+        if (planetKernels is null)
         {
-            Reason = $"no planetary kernel found in {kernelDir} (looked for {string.Join(", ", PlanetaryKernels)})";
+            Reason = $"no planetary kernel found in {kernelDir} (looked for de441.bsp, de441_part-1.bsp+de441_part-2.bsp, de440.bsp, de440s.bsp)";
             return;
         }
-        var kernels = new List<string> { planetKernel };
+        var kernels = new List<string>(planetKernels);
         kernels.AddRange(BaseKernels);
         foreach (var optional in OptionalKernels)
         {
@@ -71,7 +84,7 @@ internal sealed class SpiceKernelPool
                 return;
             }
             versions[name] = Sha256Prefix(path);
-            if (name is "de441.bsp" or "de440.bsp")
+            if (name is "de441.bsp" or "de441_part-1.bsp" or "de441_part-2.bsp" or "de440.bsp")
             {
                 CoverageStartUtc = new DateTime(1620, 1, 1, 0, 0, 0, DateTimeKind.Utc);
                 CoverageEndUtc = new DateTime(2170, 12, 31, 23, 59, 59, DateTimeKind.Utc);
