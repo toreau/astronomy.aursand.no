@@ -569,6 +569,13 @@ public static class HostGates
         Console.WriteLine("naif: running reference gate (compare-spice)...");
         var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
         Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
-        return gateExit;
+
+        // EOP C04 (IERS) refresh - part of the weekly data-refresh job.
+        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+        var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
+        var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
+        Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
+
+        return gateExit == 0 && c04Exit == 0 ? 0 : 1;
     }
 }
