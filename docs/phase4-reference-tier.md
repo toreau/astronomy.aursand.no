@@ -134,12 +134,21 @@ Apparent (`LT+S`) vs astrometric sanity: max 20.9″ (Earth's stellar aberration
 
 ## Follow-ups
 
-- **Restore `naif-kernels` cron to weekly** (`0 3 * * 0`): the Coolify API was
-  intermittently rejecting worker-app scheduled-task calls during the phase
-  ("Application not found"); the task is temporarily on `*/5 * * * *` (safe —
-  the naif job is idempotent).
-- **Run `ingest eop-c04`** on the worker (code complete; the C04 dataset is
-  staged for the Phase-6 of-date reference chain; not consumed yet).
+- **DONE — gate-after-refresh**: the `naif` job now runs the reference gate after
+  every refresh, plus EOP C04 refresh and stray-`.tmp` cleanup, throttled to at
+  most once per 24 h via `/data/naif-refresh.last` (safe under any cron cadence).
+- **DONE — `ingest eop-c04`**: runs as part of the weekly data-refresh job
+  (kernels + C04 + gate). First run: 20,459 samples staged+activated as
+  20260805 (latest UT1-UTC 0.0744 s). IERS URLs updated: the old
+  `latestVersion/5_BULLETIN_C04_IAU2000_TS_EOP.txt` pattern 404s; current file
+  is `224_EOP_C04_14.62-NOW.IAU2000A224.txt` (23,395 lines, data from 1962).
+- **Open — restore `naif-kernels` cron to weekly** (`0 3 * * 0`): the Coolify
+  API intermittently rejects worker-app scheduled-task calls ("Application
+  not found" — worker-app uuid lookups fail while api-app lookups work;
+  recovered twice during the phase, down 2.5 h at write time). The task is
+  temporarily on `*/5 * * * *`, which is **harmless** since the job is
+  idempotent and throttled. Fix in the Coolify UI (task → frequency) or via
+  the API when it recovers.
 - Pre-1972 reference positions: a historical-ΔT UTC→ET (ERFA/NodaTime-based)
   could extend the validated era back to 1849 — Phase 6 candidate.
 - of-date reference positions (ERFA nutation/precession) — Phase 6.
