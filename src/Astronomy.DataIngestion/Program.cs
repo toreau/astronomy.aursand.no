@@ -127,7 +127,9 @@ async Task<int> IngestCommandAsync(string[] args)
 
 async Task<int> OmmCommandAsync(string[] args)
 {
-    if (args.Length < 1) { Console.WriteLine("usage: omm <fetch|stage-file|activate|rollback|status> [version] [file]"); return 1; }
+    if (args.Length < 1) { Console.WriteLine("usage: omm <fetch|stage-file|activate|rollback|status|refresh> [version] [file]"); return 1; }
+    // Ensure the registry schema exists (the heartbeat normally creates it).
+    InfrastructureRegistrar.MigrateRegistry(dbPath);
     var service = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
         .AddAstronomyInfrastructure(dbPath, dataRoot)
         .AddSatellitesModule(dbPath)
@@ -135,6 +137,8 @@ async Task<int> OmmCommandAsync(string[] args)
         .GetRequiredService<ISatelliteElementIngestionService>();
     switch (args[0])
     {
+        case "refresh":
+            return await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot);
         case "fetch":
             return await service.FetchAndStageAsync(args[1]);
         case "stage-file":

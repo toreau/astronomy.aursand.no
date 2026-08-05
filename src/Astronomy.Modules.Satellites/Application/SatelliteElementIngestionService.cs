@@ -7,6 +7,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
 {
     private const string CelesTrakOmm = "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=omm";
     private const string DatasetName = "satellite-elements";
+    private const int MinimumRowCount = 10;
 
     private readonly string _dbPath;
     private readonly IDatasetRegistry _registry;
@@ -23,6 +24,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         var payload = await hc.GetStringAsync(CelesTrakOmm, ct);
         var rows = ParseCsv(payload);
+        if (RejectPayload(rows)) return 1;
         var errors = Validate(rows, DateTimeOffset.UtcNow);
         if (errors.Count > 0)
         {
@@ -40,6 +42,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
     {
         var payload = await File.ReadAllTextAsync(csvPath, ct);
         var rows = ParseCsv(payload);
+        if (RejectPayload(rows)) return 1;
         var errors = Validate(rows, DateTimeOffset.UtcNow);
         if (errors.Count > 0)
         {
@@ -51,6 +54,14 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
         await Stage(version, rows);
         Console.WriteLine($"omm: staged {rows.Count} rows as {version}");
         return 0;
+    }
+
+    /// <summary>Payload-level guard: a truncated/empty response must never be staged.</summary>
+    private static bool RejectPayload(IReadOnlyList<OrbitalElementRow> rows)
+    {
+        if (rows.Count >= MinimumRowCount) return false;
+        Console.WriteLine($"omm: REJECTED - only {rows.Count} rows (min {MinimumRowCount})");
+        return true;
     }
 
     public Task<int> ActivateAsync(string version, CancellationToken ct = default) =>

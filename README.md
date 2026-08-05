@@ -131,9 +131,10 @@ Astronomy.DataIngestion (worker CLI: ingest jobs + host verification gates)
   (kernel refresh), `fixtures` (Horizons grid), `omm`.
 - **Weekly maintenance job**: kernel refresh → reference gate → EOP C04 →
   star-catalog gap-fill, throttled to 24 h for safety.
-- **Satellite elements**: refreshed on the deployment side (`omm fetch` +
-  `activate` as a scheduled task) — TLEs older than 72 h surface an
-  `AST-7004` warning.
+- **Satellite elements**: refreshed daily by a scheduled task
+  (`omm refresh` — CelesTrak stations, auto-versioned by UTC date) and weekly
+  as part of `naif`; TLEs older than 72 h surface an `AST-7004` warning.
+  Activation hot-reloads in the API within ~60 s (no restart needed).
 
 ## Development
 

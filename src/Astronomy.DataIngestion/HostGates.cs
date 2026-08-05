@@ -817,6 +817,11 @@ public static class HostGates
         var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
         Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
+        // Satellite elements (CelesTrak stations) - daily product; refreshed on
+        // every naif run regardless of the 24h throttle (cheap, ~120 rows).
+        var ommExit = await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot);
+        Console.WriteLine(ommExit == 0 ? "naif: satellite-elements refresh OK" : "naif: satellite-elements refresh FAIL");
+
         // Star catalog - ingest once if not active yet (the HYG catalog is static;
         // this gap-fill runs on every naif invocation regardless of the throttle,
         // but only acts when the dataset is missing).
@@ -835,21 +840,21 @@ public static class HostGates
 
         // Gate-after-refresh: throttled to at most once per 24h via a marker file,
         // so any cron cadence is safe (weekly cron runs it once; a temporary
-        // every-5-min cadence only does the cheap kernel checks + C04 refresh).
+        // every-5-min cadence only does the cheap kernel checks + C04/OMM refresh).
         var marker = Path.Combine(Path.GetDirectoryName(kernelDir) ?? "/data", "naif-refresh.last");
         var due = !File.Exists(marker) || DateTime.UtcNow - File.GetLastWriteTimeUtc(marker) > TimeSpan.FromHours(24);
         if (!due)
         {
             Console.WriteLine($"naif: gate skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
-            return c04Exit == 0 && starExit == 0 ? 0 : 1;
+            return c04Exit == 0 && ommExit == 0 && starExit == 0 ? 0 : 1;
         }
 
         Console.WriteLine("naif: running reference gate (compare-spice)...");
         var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
         Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
 
-        if (gateExit == 0 && c04Exit == 0 && starExit == 0)
+        if (gateExit == 0 && c04Exit == 0 && ommExit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        return gateExit == 0 && c04Exit == 0 && starExit == 0 ? 0 : 1;
+        return gateExit == 0 && c04Exit == 0 && ommExit == 0 && starExit == 0 ? 0 : 1;
     }
 }

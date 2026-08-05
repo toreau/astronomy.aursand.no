@@ -2,8 +2,10 @@ using System.Globalization;
 using System.IO.Compression;
 using Astronomy.Infrastructure;
 using Astronomy.Infrastructure.Registry;
+using Astronomy.Modules.Satellites.Application;
 using Astronomy.SharedKernel.Datasets;
 using Astronomy.SharedKernel.Time;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Astronomy.DataIngestion;
 
@@ -210,6 +212,34 @@ public static class Jobs
         await registry.StageAsync("star-catalog-hyg", version, checksum);
         await registry.ActivateAsync("star-catalog-hyg", version);
         Console.WriteLine($"star-catalog: {stars.Count} stars staged+activated as {version} (mag range {magMin:F1}..{magMax:F1})");
+        return 0;
+    }
+
+    /// <summary>
+    /// Refresh satellite elements from CelesTrak (stations group): fetch, validate,
+    /// stage and activate under a UTC-date version (yyyyMMdd). Idempotent for
+    /// same-day reruns (same version, upsert semantics); on any failure the
+    /// currently-active dataset stays untouched.
+    /// </summary>
+    public static async Task<int> RunSatelliteElementsRefreshAsync(string dbPath, string dataRoot)
+    {
+        // The registry schema is normally created by the heartbeat/API startup;
+        // ensure it exists so this job also works standalone on a fresh db.
+        InfrastructureRegistrar.MigrateRegistry(dbPath);
+        var service = new ServiceCollection()
+            .AddAstronomyInfrastructure(dbPath, dataRoot)
+            .AddSatellitesModule(dbPath)
+            .BuildServiceProvider()
+            .GetRequiredService<ISatelliteElementIngestionService>();
+        var version = DateTime.UtcNow.ToString("yyyyMMdd");
+        if (await service.FetchAndStageAsync(version) != 0)
+        {
+            Console.WriteLine($"omm: refresh FAIL - staging {version} rejected (active dataset unchanged)");
+            return 1;
+        }
+        await service.ActivateAsync(version);
+        var s = await service.GetStatusAsync();
+        Console.WriteLine($"omm: refresh ok - active={s.ActiveVersion} elements={s.ElementCount} fresh={s.Fresh} warn={s.Warn} degraded={s.Degraded} refuse={s.Refuse}");
         return 0;
     }
 

@@ -1,4 +1,5 @@
 using Astronomy.Modules.Satellites.Application;
+using Astronomy.SharedKernel.Datasets;
 
 namespace Astronomy.UnitTests;
 
@@ -67,6 +68,96 @@ public class OmmIngestionTests
         var rows = new List<OrbitalElementRow> { Row(Now.AddHours(-10), raan: 361.0) };
         var errors = SatelliteElementIngestionService.Validate(rows, Now);
         Assert.Contains(errors, e => e.Field == "angles");
+    }
+
+    [Fact]
+    public async Task StageFileAsync_TooFewRows_Rejected()
+    {
+        var db = TempDb();
+        try
+        {
+            var csv = Path.GetTempFileName();
+            try
+            {
+                var lines = new List<string> { Header };
+                for (var i = 0; i < 3; i++)
+                    lines.Add(Line(DateTimeOffset.UtcNow.AddHours(-1), norad: $"2554{i}"));
+                await File.WriteAllLinesAsync(csv, lines);
+
+                var registry = new RecordingRegistry();
+                var service = new SatelliteElementIngestionService(db, registry);
+                var exit = await service.StageFileAsync("20260805", csv);
+
+                Assert.Equal(1, exit);
+                Assert.Empty(registry.Staged);
+            }
+            finally { File.Delete(csv); }
+        }
+        finally { CleanupDb(db); }
+    }
+
+    [Fact]
+    public async Task StageFileAsync_ValidRows_StagesAndActivates()
+    {
+        var db = TempDb();
+        try
+        {
+            var csv = Path.GetTempFileName();
+            try
+            {
+                var lines = new List<string> { Header };
+                for (var i = 0; i < 12; i++)
+                    lines.Add(Line(DateTimeOffset.UtcNow.AddHours(-2 + i * 0.1), norad: $"2554{i:D2}"));
+                await File.WriteAllLinesAsync(csv, lines);
+
+                var registry = new RecordingRegistry();
+                var service = new SatelliteElementIngestionService(db, registry);
+                var exit = await service.StageFileAsync("20260805", csv);
+
+                Assert.Equal(0, exit);
+                Assert.Contains("satellite-elements:20260805", registry.Staged);
+
+                await service.ActivateAsync("20260805");
+                var status = await service.GetStatusAsync();
+                Assert.Equal("20260805", status.ActiveVersion);
+                Assert.Equal(12, status.ElementCount);
+                Assert.Equal(12, SatelliteStore.ReadElements(db, "20260805").Count);
+            }
+            finally { File.Delete(csv); }
+        }
+        finally { CleanupDb(db); }
+    }
+
+    private static string TempDb() => Path.Combine(Path.GetTempPath(), $"omm-{Guid.NewGuid():N}.db");
+
+    private static void CleanupDb(string db)
+    {
+        foreach (var f in new[] { db, db + "-wal", db + "-shm" })
+            try { File.Delete(f); } catch { }
+    }
+
+    private sealed class RecordingRegistry : IDatasetRegistry
+    {
+        public string? ActiveVersionValue { get; private set; }
+        public List<string> Staged { get; } = [];
+
+        public DatasetRef? ActiveVersion(string datasetName) =>
+            ActiveVersionValue is null ? null : new DatasetRef(datasetName, ActiveVersionValue);
+
+        public Task<int> StageAsync(string datasetName, string version, string checksum, CancellationToken ct = default)
+        {
+            Staged.Add($"{datasetName}:{version}");
+            return Task.FromResult(0);
+        }
+
+        public Task<int> ActivateAsync(string datasetName, string version, CancellationToken ct = default)
+        {
+            ActiveVersionValue = version;
+            return Task.FromResult(0);
+        }
+
+        public Task<int> RollbackAsync(string datasetName, string version, CancellationToken ct = default) =>
+            Task.FromResult(0);
     }
 
     private static OrbitalElementRow Row(DateTimeOffset epoch, string norad = "25544", string mm = "15.5", double raan = 64.4) => new(
