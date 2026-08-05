@@ -44,6 +44,9 @@ switch (mode)
     case "compare":
         return HostGates.CompareFixtures(args.Length > 1 ? args[1] : "/data/fixtures");
 
+    case "sample":
+        return HostGates.SampleFixtures(args.Length > 1 ? args[1] : "/data/fixtures", args[2], int.Parse(args[3]));
+
     case "naif":
         return await HostGates.NaifAsync(args.Length > 1 ? args[1] : "/data/kernels");
 
@@ -52,7 +55,7 @@ switch (mode)
         break;
 
     default:
-        Console.WriteLine("usage: Astronomy.DataIngestion <heartbeat|migrate|backup|dataset|ingest|omm|probe|fixtures|compare|naif>");
+        Console.WriteLine("usage: Astronomy.DataIngestion <heartbeat|migrate|backup|dataset|ingest|omm|probe|fixtures|compare|sample|naif>");
         return 1;
 }
 return 0;

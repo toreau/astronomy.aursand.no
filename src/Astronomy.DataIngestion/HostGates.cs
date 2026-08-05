@@ -41,6 +41,18 @@ public static class HostGates
         }
     }
 
+
+    public static int SampleFixtures(string fixtureDir, string body, int step)
+    {
+        var path = Path.Combine(fixtureDir, $"horizons_{body}.csv");
+        if (!File.Exists(path)) { Console.WriteLine($"sample: {body} - no fixture"); return 1; }
+        var lines = File.ReadAllLines(path);
+        var sample = lines.Where((_, i) => i % step == 0).ToArray();
+        Console.WriteLine($"sample: {body} {lines.Length} rows -> every {step}th = {sample.Length} rows");
+        foreach (var line in sample) Console.WriteLine(line);
+        return 0;
+    }
+
     public static async Task<int> FetchFixturesAsync(string outDir)
     {
         Directory.CreateDirectory(outDir);

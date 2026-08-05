@@ -12,6 +12,7 @@
     <Project Path="src/Astronomy.SharedKernel/Astronomy.SharedKernel.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Astronomy.AccuracyTests/Astronomy.AccuracyTests.csproj" />
     <Project Path="tests/Astronomy.ApiTests/Astronomy.ApiTests.csproj" />
     <Project Path="tests/Astronomy.ArchitectureTests/Astronomy.ArchitectureTests.csproj" />
     <Project Path="tests/Astronomy.IntegrationTests/Astronomy.IntegrationTests.csproj" />

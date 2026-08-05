@@ -123,28 +123,112 @@ app.MapGet("/api/v1/calendars/date-arithmetic", (string date, int days, string? 
     return Results.Ok(service.AddDays(parsed, days, timezone));
 });
 
-app.MapGet("/api/v1/ephemeris/sun/position", async (
-    string? time, double? latitude, double? longitude, IEphemerisService service, CancellationToken ct) =>
+app.MapGet("/api/v1/ephemeris/{body}/position", async (
+    string body, string? time, double? latitude, double? longitude, double? elevationMeters,
+    string? frame, string? positionType, string? refraction, string? precision,
+    IEphemerisService service, CancellationToken ct, HttpContext context) =>
 {
-    var request = new PositionRequest("sun", ParseTime(time), ObserverLocationFrom(latitude, longitude),
-        Astronomy.SharedKernel.Coordinates.CoordinateFrame.EquatorialOfDate,
-        Astronomy.SharedKernel.Coordinates.PositionType.Apparent,
-        Astronomy.SharedKernel.Coordinates.RefractionModel.None,
-        Astronomy.SharedKernel.Coordinates.PrecisionMode.Consumer);
-    return Results.Ok(await service.GetPositionAsync(request, ct));
+    if (!BodyId.TryParse(body, out var bodyId))
+        throw new ArgumentException($"unknown body '{body}'");
+    var request = new PositionRequest(
+        bodyId.Name,
+        ParseTime(time),
+        ObserverLocationFrom(latitude, longitude, elevationMeters),
+        ParseFrame(frame),
+        ParsePositionType(positionType),
+        ParseRefraction(refraction),
+        ParsePrecision(precision));
+    var result = await service.GetPositionAsync(request, ct);
+    context.Response.Headers.CacheControl = "no-cache";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/ephemeris/{body}/rise-set", async (
+    string body, string date, double? latitude, double? longitude, double? elevationMeters, string? precision,
+    IEphemerisService service, CancellationToken ct, HttpContext context) =>
+{
+    if (!BodyId.TryParse(body, out var bodyId))
+        throw new ArgumentException($"unknown body '{body}'");
+    var result = await service.GetRiseSetAsync(bodyId,
+        DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        ObserverLocationFrom(latitude, longitude, elevationMeters), ParsePrecision(precision), ct);
+    context.Response.Headers.CacheControl = "public, max-age=900";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/ephemeris/twilight", async (
+    string date, double? latitude, double? longitude, double? elevationMeters, string? type, string? precision,
+    IEphemerisService service, CancellationToken ct, HttpContext context) =>
+{
+    var twilightType = type?.ToLowerInvariant() switch
+    {
+        "civil" => TwilightType.Civil,
+        "nautical" => TwilightType.Nautical,
+        "astronomical" => TwilightType.Astronomical,
+        _ => throw new ArgumentException($"unknown twilight type '{type}'"),
+    };
+    var result = await service.GetTwilightAsync(
+        DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        ObserverLocationFrom(latitude, longitude, elevationMeters), twilightType, ParsePrecision(precision), ct);
+    context.Response.Headers.CacheControl = "public, max-age=900";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/ephemeris/moon/phases", async (
+    string? from, string? to, IEphemerisService service, CancellationToken ct, HttpContext context) =>
+{
+    var result = await service.GetMoonPhasesAsync(ParseTime(from), ParseTime(to), ct);
+    context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(result);
 });
 
 app.MapGet("/api/v1/almanac/daily", async (
-    string date, double? latitude, double? longitude, IAlmanacService service, CancellationToken ct) =>
+    string date, double? latitude, double? longitude, double? elevationMeters, string? precision,
+    IAlmanacService service, CancellationToken ct) =>
 {
-    var request = new DailyAlmanacRequest(DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-        latitude ?? throw new ArgumentException("latitude required"), longitude ?? throw new ArgumentException("longitude required"), 0, "consumer");
+    var request = new DailyAlmanacRequest(
+        DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        latitude ?? throw new ArgumentException("latitude required"),
+        longitude ?? throw new ArgumentException("longitude required"),
+        elevationMeters ?? 0,
+        precision ?? "consumer");
     return Results.Ok(await service.GetDailyAsync(request, ct));
 });
 
 app.MapOpenApi();
 
 app.Run("http://0.0.0.0:8080");
+
+static Astronomy.SharedKernel.Coordinates.CoordinateFrame ParseFrame(string? frame) => frame?.ToLowerInvariant() switch
+{
+    "icrs" or "j2000" => Astronomy.SharedKernel.Coordinates.CoordinateFrame.IcrJ2000,
+    "of-date" or "equatorial-of-date" => Astronomy.SharedKernel.Coordinates.CoordinateFrame.EquatorialOfDate,
+    "horizontal" or "alt-az" => Astronomy.SharedKernel.Coordinates.CoordinateFrame.Horizontal,
+    _ => throw new ArgumentException($"unknown frame '{frame}' (supported: icrs, of-date, horizontal)"),
+};
+
+static Astronomy.SharedKernel.Coordinates.PositionType ParsePositionType(string? positionType) => positionType?.ToLowerInvariant() switch
+{
+    "astrometric" => Astronomy.SharedKernel.Coordinates.PositionType.Astrometric,
+    "apparent" => Astronomy.SharedKernel.Coordinates.PositionType.Apparent,
+    "geometric" => Astronomy.SharedKernel.Coordinates.PositionType.Geometric,
+    _ => throw new ArgumentException($"unknown positionType '{positionType}'"),
+};
+
+static Astronomy.SharedKernel.Coordinates.RefractionModel ParseRefraction(string? refraction) => refraction?.ToLowerInvariant() switch
+{
+    "none" => Astronomy.SharedKernel.Coordinates.RefractionModel.None,
+    "simple" or "standard" => Astronomy.SharedKernel.Coordinates.RefractionModel.Simple,
+    _ => throw new ArgumentException($"unknown refraction '{refraction}'"),
+};
+
+static Astronomy.SharedKernel.Coordinates.PrecisionMode ParsePrecision(string? precision) => precision?.ToLowerInvariant() switch
+{
+    null or "consumer" => Astronomy.SharedKernel.Coordinates.PrecisionMode.Consumer,
+    "advanced" => Astronomy.SharedKernel.Coordinates.PrecisionMode.Advanced,
+    "reference" => Astronomy.SharedKernel.Coordinates.PrecisionMode.Reference,
+    _ => throw new ArgumentException($"unknown precision '{precision}'"),
+};
 
 static DateTimeOffset ParseTime(string? time) =>
     time is null
@@ -154,8 +238,10 @@ static DateTimeOffset ParseTime(string? time) =>
             ? parsed
             : throw new ArgumentException($"invalid time '{time}' (expected ISO 8601)");
 
-static Astronomy.SharedKernel.Coordinates.ObserverLocation ObserverLocationFrom(double? latitude, double? longitude) =>
+static Astronomy.SharedKernel.Coordinates.ObserverLocation ObserverLocationFrom(double? latitude, double? longitude, double? elevationMeters) =>
     Astronomy.SharedKernel.Coordinates.ObserverLocation.FromDegrees(
         latitude ?? throw new ArgumentException("latitude required"),
-        longitude ?? throw new ArgumentException("longitude required"), 0);
+        longitude ?? throw new ArgumentException("longitude required"),
+        elevationMeters ?? 0);
+
 public partial class Program { }

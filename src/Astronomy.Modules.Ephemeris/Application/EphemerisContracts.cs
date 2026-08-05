@@ -1,10 +1,32 @@
-using Astronomy.SharedKernel;
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
-using Astronomy.SharedKernel.Time;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Astronomy.Modules.Ephemeris.Application;
+
+public enum TwilightType
+{
+    Civil,
+    Nautical,
+    Astronomical,
+}
+
+public sealed record BodyId(string Name)
+{
+    public static readonly BodyId Sun = new("sun");
+    public static readonly BodyId Moon = new("moon");
+
+    public static bool TryParse(string name, out BodyId body)
+    {
+        body = name.ToLowerInvariant() switch
+        {
+            "sun" => Sun,
+            "moon" => Moon,
+            _ => new BodyId(name),
+        };
+        return body is { Name: "sun" or "moon" };
+    }
+}
 
 public sealed record PositionRequest(
     string Body,
@@ -24,22 +46,51 @@ public sealed record EphemerisPositionResult(
     double DistanceKm,
     CalculationMetadata Metadata);
 
+public sealed record RiseSetTransitResult(
+    string Body,
+    DateTimeOffset? RiseUtc,
+    DateTimeOffset? SetUtc,
+    DateTimeOffset? TransitUtc,
+    CalculationMetadata Metadata);
+
+public sealed record TwilightResult(
+    TwilightType Type,
+    DateTimeOffset? BeginUtc,
+    DateTimeOffset? EndUtc,
+    CalculationMetadata Metadata);
+
+public sealed record MoonPhaseEvent(
+    DateTimeOffset Utc,
+    string Phase,
+    double IlluminationFraction);
+
+public sealed record MoonPhasesResult(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    IReadOnlyList<MoonPhaseEvent> Events,
+    CalculationMetadata Metadata);
+
+public sealed record MoonIlluminationResult(
+    DateTimeOffset Time,
+    double IlluminationFraction,
+    string PhaseName,
+    CalculationMetadata Metadata);
+
 public interface IEphemerisService
 {
     Task<EphemerisPositionResult> GetPositionAsync(PositionRequest request, CancellationToken ct);
-}
-
-internal sealed class EphemerisService : IEphemerisService
-{
-    public Task<EphemerisPositionResult> GetPositionAsync(PositionRequest request, CancellationToken ct) =>
-        throw new FeatureNotImplementedInPhaseException("ephemeris positions", "Phase 2");
+    Task<RiseSetTransitResult> GetRiseSetAsync(BodyId body, DateOnly date, ObserverLocation observer, PrecisionMode precision, CancellationToken ct);
+    Task<TwilightResult> GetTwilightAsync(DateOnly date, ObserverLocation observer, TwilightType type, PrecisionMode precision, CancellationToken ct);
+    Task<MoonPhasesResult> GetMoonPhasesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
+    Task<MoonIlluminationResult> GetMoonIlluminationAsync(DateTimeOffset time, CancellationToken ct);
 }
 
 public static class EphemerisModuleRegistrar
 {
     public static IServiceCollection AddEphemerisModule(this IServiceCollection services)
     {
-        services.AddSingleton<IEphemerisService, EphemerisService>();
+        services.AddSingleton<IEphemerisService>(sp =>
+            new EphemerisService(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>()));
         return services;
     }
 }
