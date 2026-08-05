@@ -16,9 +16,10 @@ internal sealed class SpiceKernelPool
 {
     private static readonly object Sync = new();
 
-    private static readonly string[] RequiredKernels = ["de440s.bsp", "naif0012.tls", "pck00010.tpc"];
+    private static readonly string[] BaseKernels = ["naif0012.tls", "pck00010.tpc"];
     private static readonly string[] OptionalKernels = ["earth_assoc_itrf93.tf"];
     private const string FullKernel = "de440.bsp";
+    private const string ShortKernel = "de440s.bsp";
 
     public bool IsAvailable { get; }
 
@@ -28,7 +29,10 @@ internal sealed class SpiceKernelPool
 
     /// <summary>
     /// Epoch coverage of the loaded planetary kernel: de440.bsp spans 1620-2170,
-    /// de440s.bsp (reduced NAIF short product, barycenters only for the outer planets) 1849-2150.
+    /// de440s.bsp (reduced NAIF short product) 1849-2150. Both provide planet
+    /// CENTER segments for the inner planets (Sun, Moon, Mercury, Venus, Earth)
+    /// and barycenter segments for the outer planets; the reference tier uses
+    /// planet barycenters for Mars..Neptune (center-vs-barycenter <= 0.05").
     /// </summary>
     public DateTime CoverageStartUtc { get; } = new(1849, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
@@ -42,18 +46,21 @@ internal sealed class SpiceKernelPool
             return;
         }
         var versions = new Dictionary<string, string>();
-        var planetKernel = File.Exists(Path.Combine(kernelDir, FullKernel)) ? FullKernel : "de440s.bsp";
-        foreach (var name in RequiredKernels.Concat(OptionalKernels).Prepend(planetKernel).Distinct())
+        var planetKernel = File.Exists(Path.Combine(kernelDir, FullKernel)) ? FullKernel : ShortKernel;
+        var kernels = new List<string> { planetKernel };
+        kernels.AddRange(BaseKernels);
+        foreach (var optional in OptionalKernels)
+        {
+            if (File.Exists(Path.Combine(kernelDir, optional)))
+                kernels.Add(optional);
+        }
+        foreach (var name in kernels)
         {
             var path = Path.Combine(kernelDir, name);
             if (!File.Exists(path))
             {
-                if (RequiredKernels.Contains(name) || name == FullKernel)
-                {
-                    Reason = $"kernel missing: {path}";
-                    return;
-                }
-                continue;
+                Reason = $"kernel missing: {path}";
+                return;
             }
             versions[name] = Sha256Prefix(path);
             if (name == FullKernel)

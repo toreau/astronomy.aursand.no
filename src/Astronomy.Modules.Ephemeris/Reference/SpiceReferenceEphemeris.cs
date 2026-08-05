@@ -40,17 +40,23 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
         return new ReferencePosition(raDeg, decDeg, rangeKm, abcorr);
     }
 
+    /// <summary>
+    /// de440s/de440 provide planet CENTER segments for Sun, Moon, Mercury, Venus
+    /// (and Earth); for the outer planets only BARYCENTER segments exist. The
+    /// barycenter-vs-center offset is <= 0.05" for all outer planets (Jupiter ~100 km
+    /// at 5.2 AU), so barycenter targets are used for Mars..Neptune.
+    /// </summary>
     private static string SpiceName(BodyId body) => body.Name switch
     {
         "sun" => "SUN",
         "moon" => "MOON",
         "mercury" => "MERCURY",
         "venus" => "VENUS",
-        "mars" => "MARS",
-        "jupiter" => "JUPITER",
-        "saturn" => "SATURN",
-        "uranus" => "URANUS",
-        "neptune" => "NEPTUNE",
+        "mars" => "MARS BARYCENTER",
+        "jupiter" => "JUPITER BARYCENTER",
+        "saturn" => "SATURN BARYCENTER",
+        "uranus" => "URANUS BARYCENTER",
+        "neptune" => "NEPTUNE BARYCENTER",
         _ => throw new ArgumentException($"unsupported body '{body.Name}'"),
     };
 }
