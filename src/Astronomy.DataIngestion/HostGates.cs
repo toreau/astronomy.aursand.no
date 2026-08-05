@@ -690,30 +690,11 @@ public static class HostGates
             Console.WriteLine($"naif: {Path.GetFileName(tmp),-26} deleted (stray partial download)");
         }
 
-        // Gate-after-refresh + EOP C04 refresh: heavy steps, throttled to at most
-        // once per 24h via a marker file, so any cron cadence is safe (weekly cron
-        // runs them once; a temporary every-5-min cadence only does the cheap
-        // kernel checks).
-        var marker = Path.Combine(Path.GetDirectoryName(kernelDir) ?? "/data", "naif-refresh.last");
-        var due = !File.Exists(marker) || DateTime.UtcNow - File.GetLastWriteTimeUtc(marker) > TimeSpan.FromHours(24);
-        if (!due)
-        {
-            Console.WriteLine($"naif: gate+c04 skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
-            return 0;
-        }
-
-        Console.WriteLine("naif: running reference gate (compare-spice)...");
-        var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
-        Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
-
-        // EOP C04 (IERS) refresh - part of the weekly data-refresh job.
+        // Star catalog - ingest once if not active yet (the HYG catalog is static;
+        // this gap-fill runs on every naif invocation regardless of the throttle,
+        // but only acts when the dataset is missing).
         var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
         var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
-        var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
-        Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
-
-        // Star catalog - ingest once if not active yet (the HYG catalog is static;
-        // the weekly job only fills the gap if the dataset is missing).
         var starExit = 0;
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
         if (registry.ActiveVersion("star-catalog-hyg") is null)
@@ -726,6 +707,26 @@ public static class HostGates
         {
             Console.WriteLine("naif: star catalog already active, skipping");
         }
+
+        // Gate-after-refresh + EOP C04 refresh: heavy steps, throttled to at most
+        // once per 24h via a marker file, so any cron cadence is safe (weekly cron
+        // runs them once; a temporary every-5-min cadence only does the cheap
+        // kernel checks).
+        var marker = Path.Combine(Path.GetDirectoryName(kernelDir) ?? "/data", "naif-refresh.last");
+        var due = !File.Exists(marker) || DateTime.UtcNow - File.GetLastWriteTimeUtc(marker) > TimeSpan.FromHours(24);
+        if (!due)
+        {
+            Console.WriteLine($"naif: gate+c04 skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
+            return starExit == 0 ? 0 : 1;
+        }
+
+        Console.WriteLine("naif: running reference gate (compare-spice)...");
+        var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
+        Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
+
+        // EOP C04 (IERS) refresh - part of the weekly data-refresh job.
+        var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
+        Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
         if (gateExit == 0 && c04Exit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
