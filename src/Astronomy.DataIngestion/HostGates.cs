@@ -341,6 +341,18 @@ public static class HostGates
 
         try
         {
+            var ftp = await hc.GetStringAsync("https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/");
+            var names = System.Text.RegularExpressions.Regex.Matches(ftp, @"href=""([^""]+\.bsp)""")
+                .Select(m => m.Groups[1].Value).ToList();
+            Console.WriteLine($"naif: jpl ftp planets .bsp: {string.Join(", ", names)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: jpl ftp planets listing FAIL {ex.Message.Split('\n')[0]}");
+        }
+
+        try
+        {
             var listing = await hc.GetStringAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/");
             var bspNames = System.Text.RegularExpressions.Regex.Matches(listing, @"href=""([^""]+\.bsp)""")
                 .Select(m => m.Groups[1].Value).ToList();
