@@ -62,7 +62,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
     public async Task<IngestionStatus> GetStatusAsync(CancellationToken ct = default)
     {
         var active = _registry.ActiveVersion(DatasetName);
-        var rows = SatelliteStore.ReadElements(_dbPath);
+        var rows = active is null ? [] : SatelliteStore.ReadElements(_dbPath, active.Version);
         var (fresh, warn, degraded, refuse) = SatelliteStore.Freshness(rows, DateTimeOffset.UtcNow);
         return new IngestionStatus(active?.Version, rows.Count, fresh, warn, degraded, refuse);
     }
@@ -75,7 +75,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
         SatelliteStore.WriteElements(_dbPath, version, rows);
     }
 
-    private static List<OrbitalElementRow> ParseCsv(string csv)
+    internal static List<OrbitalElementRow> ParseCsv(string csv)
     {
         var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (lines.Length < 2) throw new FormatException("empty or header-only OMM payload");
@@ -97,7 +97,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
         static double D(string s) => double.Parse(s.Trim(), CultureInfo.InvariantCulture);
     }
 
-    private static List<ElementValidationError> Validate(IReadOnlyList<OrbitalElementRow> rows, DateTimeOffset nowUtc)
+    internal static List<ElementValidationError> Validate(IReadOnlyList<OrbitalElementRow> rows, DateTimeOffset nowUtc)
     {
         var errors = new List<ElementValidationError>();
         for (var i = 0; i < rows.Count; i++)

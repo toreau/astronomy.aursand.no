@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -24,7 +25,8 @@ public class SatelliteDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<SatelliteElementRecord>()
-            .HasIndex(e => new { e.DatasetVersion, e.NoradId });
+            .HasIndex(e => new { e.DatasetVersion, e.NoradId })
+            .IsUnique();
     }
 }
 
@@ -33,14 +35,21 @@ public class SatelliteDesignFactory : IDesignTimeDbContextFactory<SatelliteDbCon
     public SatelliteDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<SatelliteDbContext>()
-            .UseSqlite("Data Source=satellite-design.db").Options;
+            .UseSqlite($"Data Source={Path.Combine(Path.GetTempPath(), "satellite-design.db")}")
+            .Options;
         return new SatelliteDbContext(options);
     }
 }
 
-internal static class SatelliteStore
+public static class SatelliteStore
 {
-    public static SatelliteDbContext CreateContext(string dbPath)
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    internal static SatelliteDbContext CreateContext(string dbPath)
     {
         var conn = new SqliteConnection($"Data Source={dbPath}");
         conn.Open();
@@ -62,6 +71,8 @@ internal static class SatelliteStore
     public static void WriteElements(string dbPath, string version, IReadOnlyList<OrbitalElementRow> rows)
     {
         using var ctx = CreateContext(dbPath);
+        var existing = ctx.Elements.Where(e => e.DatasetVersion == version).ToList();
+        ctx.Elements.RemoveRange(existing);
         ctx.Elements.AddRange(rows.Select(r => new SatelliteElementRecord
         {
             DatasetVersion = version,
@@ -101,12 +112,22 @@ internal static class SatelliteStore
         return (fresh, warn, degraded, refuse);
     }
 
-    internal static string ToJson(OrbitalElementRow r) => string.Create(CultureInfo.InvariantCulture,
-        $"{{\"name\":\"{r.Name}\",\"norad\":\"{r.NoradId}\",\"epoch\":\"{r.EpochUtc:O}\",\"mm\":{r.MeanMotion:F9},\"ecc\":{r.Eccentricity:F9},\"incl\":{r.Inclination:F9},\"raan\":{r.RaOfAscNode:F9},\"argp\":{r.ArgOfPericenter:F9},\"ma\":{r.MeanAnomaly:F9},\"bstar\":{r.Bstar:E4},\"mmdot\":{r.MmDot:E4},\"mmddot\":{r.MmDdot:E4},\"rev\":{r.RevAtEpoch}}}");
+    internal static string ToJson(OrbitalElementRow r) => JsonSerializer.Serialize(r, JsonOptions);
 
     private static OrbitalElementRow FromJson(SatelliteElementRecord record)
     {
-        using var doc = System.Text.Json.JsonDocument.Parse(record.ElementsJson);
+        using var probe = JsonDocument.Parse(record.ElementsJson);
+        // Rows staged before the STJ format used short keys ("mm", "norad", ...);
+        // STJ's constructor binding would silently default those, so detect them
+        // explicitly and parse the legacy shape.
+        if (probe.RootElement.TryGetProperty("mm", out _))
+            return FromLegacyJson(probe);
+        return JsonSerializer.Deserialize<OrbitalElementRow>(record.ElementsJson, JsonOptions)
+            ?? throw new FormatException("null elements json");
+    }
+
+    private static OrbitalElementRow FromLegacyJson(JsonDocument doc)
+    {
         var r = doc.RootElement;
         return new OrbitalElementRow(
             r.GetProperty("name").GetString()!, r.GetProperty("norad").GetString()!,

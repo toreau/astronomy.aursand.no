@@ -13,10 +13,10 @@ against JPL Horizons across 1900–2150.
 
 | Domain | Endpoint | Description |
 |---|---|---|
-| System | `GET /healthz`, `GET /ready` | Liveness and readiness (db + kernels) |
+| System | `GET /health/live`, `GET /health/ready` | Liveness and deep readiness (db, schema, datasets, kernels) |
 | Time | `GET /api/v1/time/julian-date` | JD/TT/TAI/UT1 conversions |
 | Time | `GET /api/v1/time/time-scales` | UTC, TAI, TT, UT1 for an instant |
-| Calendars | `GET /api/v1/calendars/convert` | Gregorian ↔ Julian ↔ Hebrew conversions |
+| Calendars | `GET /api/v1/calendars/convert` | Gregorian date → ISO week date, Julian day number, timezone |
 | Calendars | `GET /api/v1/calendars/date-arithmetic` | Date ± days with calendar-aware results |
 | Ephemeris | `GET /api/v1/ephemeris/{body}/position` | RA/Dec (icrs, of-date, horizontal) + distance |
 | Ephemeris | `GET /api/v1/ephemeris/{body}/rise-set` | Rise/set/transit for a date and observer |
@@ -131,6 +131,9 @@ Astronomy.DataIngestion (worker CLI: ingest jobs + host verification gates)
   (kernel refresh), `fixtures` (Horizons grid), `omm`.
 - **Weekly maintenance job**: kernel refresh → reference gate → EOP C04 →
   star-catalog gap-fill, throttled to 24 h for safety.
+- **Satellite elements**: refreshed on the deployment side (`omm fetch` +
+  `activate` as a scheduled task) — TLEs older than 72 h surface an
+  `AST-7004` warning.
 
 ## Development
 
@@ -142,12 +145,14 @@ dotnet build Astronomy.slnx -c Release
 dotnet test Astronomy.slnx -c Release
 ```
 
-- The full suite (1,223 tests: 1,122 accuracy, 68 unit, 21 API, 7
-  architecture, 5 integration) runs in CI with no network access — the
+- The full suite (1,260 tests: 1,122 accuracy, 97 unit, 31 API, 6
+  architecture, 4 integration) runs in CI with no network access — the
   accuracy fixtures (Horizons samples, the Vallado SGP4 verification set) are
   committed.
 - The SPICE/ERFA code paths require the native libraries and kernels and are
   exercised by the deployed host gates, not by CI.
+- The API migrates its own schema at startup (registry + satellite elements),
+  so it no longer depends on the worker having run first.
 
 ## Deployment
 

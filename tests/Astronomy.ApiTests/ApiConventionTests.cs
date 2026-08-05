@@ -16,11 +16,55 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task AnonymousAccess_Healthz_Returns200()
+    public async Task AnonymousAccess_HealthLive_Returns200()
     {
         var client = _factory.CreateClient();
-        var response = await client.GetAsync("/healthz");
+        var response = await client.GetAsync("/health/live");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task HealthReady_AfterStartupMigration_Returns200_WithComponents()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/health/ready");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"status\":\"ready\"", body);
+        Assert.Contains("\"db\":\"ok\"", body);
+        Assert.Contains("kernels", body);
+        Assert.Contains("starCatalog", body);
+        Assert.Contains("satelliteElements", body);
+    }
+
+    [Fact]
+    public async Task HealthReady_CorruptDatabase_Returns503()
+    {
+        var db = Path.Combine(Path.GetTempPath(), $"astro-api-bad-{Guid.NewGuid():N}.db");
+        await File.WriteAllTextAsync(db, "this is not a sqlite database");
+        var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b => b.UseSetting("ASTRONOMY_DB_PATH", db));
+        try
+        {
+            var client = factory.CreateClient();
+            var response = await client.GetAsync("/health/ready");
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains("\"status\":\"not-ready\"", body);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            File.Delete(db);
+        }
+    }
+
+    [Fact]
+    public async Task Healthz_And_Ready_AreGone()
+    {
+        var client = _factory.CreateClient();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/healthz")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/ready")).StatusCode);
     }
 
     [Fact]
@@ -207,6 +251,86 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("astronomy", body.ToLowerInvariant());
+    }
+
+    [Fact]
+    public async Task InvalidDate_NonDateString_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/rise-set?date=not-a-date&latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task InvalidDate_CalendarOverflow_Returns400()
+    {
+        // 2026-02-31 is not a valid calendar date; must be 400, not 500.
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/rise-set?date=2026-02-31&latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task RiseSet_HasPublicCacheHeader()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/rise-set?date=2026-08-04&latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("public, max-age=900", response.Headers.CacheControl?.ToString());
+    }
+
+    [Fact]
+    public async Task HorizontalPosition_MissingObserver_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&frame=horizontal&precision=consumer");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task EquatorialPosition_MissingObserver_StillWorks()
+    {
+        // Equatorial frames do not need an observer; missing coords must not 400.
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&frame=icrs&positionType=astrometric&precision=consumer");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SatellitePasses_InvalidMinElevation_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/satellites/25544/passes?date=2026-08-05&latitude=59.9&longitude=10.7&minElevation=200");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task AlmanacDaily_MissingLatitude_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/almanac/daily?date=2026-08-05&longitude=10.7");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task CachedEndpoint_SecondCall_ReturnsSameBody()
+    {
+        var client = _factory.CreateClient();
+        var url = "/api/v1/ephemeris/sun/rise-set?date=2026-08-04&latitude=59.9&longitude=10.7";
+        var first = await client.GetStringAsync(url);
+        var second = await client.GetStringAsync(url);
+        Assert.Equal(first, second);
     }
 
     public sealed record SunPositionResponse(string Body, double RightAscensionDeg, double DeclinationDeg, double? AltitudeDeg, double? AzimuthDeg, double DistanceKm);

@@ -1,0 +1,80 @@
+using Astronomy.DataIngestion;
+using Astronomy.SharedKernel.Stars;
+
+namespace Astronomy.UnitTests;
+
+public class JobsParsingTests
+{
+    [Fact]
+    public void SplitCsv_HandlesQuotedCommas()
+    {
+        var fields = Jobs.SplitCsv("a,\"b,c\",d");
+        Assert.Equal(new[] { "a", "b,c", "d" }, fields);
+    }
+
+    [Fact]
+    public void SplitCsv_HandlesEscapedQuotes()
+    {
+        var fields = Jobs.SplitCsv("a,\"he said \"\"hi\"\"\",b");
+        Assert.Equal(new[] { "a", "he said \"hi\"", "b" }, fields);
+    }
+
+    [Fact]
+    public void SplitCsv_HandlesEmptyFields()
+    {
+        var fields = Jobs.SplitCsv("a,,c,");
+        Assert.Equal(new[] { "a", "", "c", "" }, fields);
+    }
+
+    // HYG v3.8-style row: id,hip,hd,hr,gl,bf,proper,ra(h),dec,dist(pc),pmra,pmdec,
+    // rv,mag,absmag,spect,ci,x,y,z,vx,vy,vz,rarad,decrad,pmrarad,pmdecrad,
+    // bayer,flam,con,comp,comp_primary,base,lum,var,var_min,var_max
+    private const string SiriusLine =
+        "0,32349,48915,2491,,9Alp CMa,Sirius,6.7524,-16.7161,2.64,-546.01,-1223.08,-5.55,-1.44,1.43," +
+        "A0m...,-0.05,2.4,-2.0,-0.5,-7.6,-1.3,0.2,1.7638,-0.2918,-546.01,-1223.08,Alp,9,CMa,,,,,,";
+
+    [Fact]
+    public void ParseHygLine_ParsesRealisticRow()
+    {
+        var star = Jobs.ParseHygLine(SiriusLine);
+        Assert.NotNull(star);
+        Assert.Equal("32349", star.Value.Hip);
+        Assert.Equal("Sirius", star.Value.ProperName);
+        Assert.Equal("9Alp CMa", star.Value.BayerFlamsteed);
+        Assert.Equal("Alp", star.Value.Bayer);
+        Assert.Equal("9", star.Value.Flamsteed);
+        Assert.Equal("CMa", star.Value.Constellation);
+        Assert.Equal(6.7524 * 15.0, star.Value.RaDeg, 6);
+        Assert.Equal(-16.7161, star.Value.DecDeg, 6);
+        Assert.Equal(-546.01, star.Value.PmRaMasYr, 3);
+        Assert.Equal(-1223.08, star.Value.PmDecMasYr, 3);
+        Assert.Equal(2.64 * 3.262, star.Value.DistLightYears, 3);
+        Assert.Equal(-1.44, star.Value.Vmag, 2);
+        Assert.Equal("A0m...", star.Value.SpectralType);
+    }
+
+    [Fact]
+    public void ParseHygLine_DropsSol()
+    {
+        // dist 0 marks the Sun; Sol must not enter the catalog.
+        var solLine = "0,,,,,Sol,0,0,0,0,0,0,0,-26.8,-4.85,G2V,,,,,,,,,,,,,,,,";
+        Assert.Null(Jobs.ParseHygLine(solLine));
+    }
+
+    [Fact]
+    public void ParseHygLine_DropsShortOrMalformedRows()
+    {
+        Assert.Null(Jobs.ParseHygLine("1,2,3"));
+        Assert.Null(Jobs.ParseHygLine(""));
+    }
+
+    [Fact]
+    public void ParseHygLine_HandlesQuotedProperName()
+    {
+        var line = "0,32349,48915,2491,,9Alp CMa,\"Sirius, the Dog Star\",6.7524,-16.7161,2.64,-546.01,-1223.08,-5.55,-1.44,1.43," +
+                   "A0m...,-0.05,2.4,-2.0,-0.5,-7.6,-1.3,0.2,1.7638,-0.2918,-546.01,-1223.08,Alp,9,CMa,,,,,,";
+        var star = Jobs.ParseHygLine(line);
+        Assert.NotNull(star);
+        Assert.Equal("Sirius, the Dog Star", star.Value.ProperName);
+    }
+}

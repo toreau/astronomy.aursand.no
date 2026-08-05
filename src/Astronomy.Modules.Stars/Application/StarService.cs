@@ -47,9 +47,16 @@ internal sealed class StarService : IStarService
             if (star.Vmag > request.MaxMagnitude) continue;
             results.Add(new StarSearchResult("hyg", star.Hip, Name(star), ra, dec, star.Vmag,
                 Metadata(star, "cone-search")));
-            if (results.Count >= request.Limit) break;
         }
-        results.Sort((a, b) => a.Vmag.CompareTo(b.Vmag));
+        // Brightest-first, then hip for determinism; truncate after sorting so the
+        // limit never drops a brighter star that appears later in the catalog.
+        results.Sort((a, b) =>
+        {
+            var byMag = a.Vmag.CompareTo(b.Vmag);
+            return byMag != 0 ? byMag : string.CompareOrdinal(a.CatalogueId, b.CatalogueId);
+        });
+        if (results.Count > request.Limit)
+            results.RemoveRange(request.Limit, results.Count - request.Limit);
         return Task.FromResult<IReadOnlyList<StarSearchResult>>(results);
     }
 

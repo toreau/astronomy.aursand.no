@@ -13,9 +13,34 @@ public sealed class OneSgp4Propagator : IOrbitalPropagator
 {
     public TemeVector Propagate(OrbitalElementRow elements, DateTimeOffset utc)
     {
+        var tle = Parse(elements);
+        return Propagate(tle, elements, utc);
+    }
+
+    /// <summary>Parse once and reuse across many epochs (pass prediction evaluates
+    /// thousands of steps per request; re-parsing the TLE each step dominates cost).</summary>
+    internal Tle Parse(OrbitalElementRow elements)
+    {
         var line1 = BuildLine1(elements);
         var line2 = BuildLine2(elements);
-        return PropagateTle(line1, line2, elements.EpochUtc, utc);
+        return ParserTLE.parseTle(line1, line2, "v");
+    }
+
+    /// <summary>Propagate a previously parsed TLE to the given instant.</summary>
+    internal TemeVector Propagate(Tle tle, OrbitalElementRow elements, DateTimeOffset utc)
+    {
+        var (year, dayOfYear) = EpochFields(elements.EpochUtc);
+        var t = new EpochTime(year, dayOfYear);
+        t.addMinutes((utc - elements.EpochUtc).TotalMinutes);
+        var p = SatFunctions.getSatPositionAtTime(tle, t, Sgp4.wgsConstant.WGS_72);
+        return new TemeVector(p.getX(), p.getY(), p.getZ());
+    }
+
+    /// <summary>Prepared evaluator for a fixed element set (pass prediction fast path).</summary>
+    internal Func<DateTimeOffset, TemeVector> PreparedPropagator(OrbitalElementRow elements)
+    {
+        var tle = Parse(elements);
+        return utc => Propagate(tle, elements, utc);
     }
 
     /// <summary>Raw TLE entry point (accuracy-suite/verification use).</summary>

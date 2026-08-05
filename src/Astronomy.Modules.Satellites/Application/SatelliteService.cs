@@ -1,6 +1,7 @@
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
 using Astronomy.SharedKernel.Time;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Astronomy.Modules.Satellites.Application;
 
@@ -12,17 +13,21 @@ internal sealed class SatelliteService : ISatelliteService
     public const double StaleTleHours = 72.0;
     public const double MaxPassWindowDays = 7.0;
 
+    private static readonly TimeSpan ElementsCacheTtl = TimeSpan.FromSeconds(60);
+
     private readonly string _dbPath;
     private readonly IDatasetRegistry _registry;
     private readonly TimeScaleConverter _timeScale;
     private readonly IOrbitalPropagator _propagator;
+    private readonly IMemoryCache? _cache;
 
-    public SatelliteService(string dbPath, IDatasetRegistry registry, TimeScaleConverter timeScale, IOrbitalPropagator? propagator = null)
+    public SatelliteService(string dbPath, IDatasetRegistry registry, TimeScaleConverter timeScale, IOrbitalPropagator? propagator = null, IMemoryCache? cache = null)
     {
         _dbPath = dbPath;
         _registry = registry;
         _timeScale = timeScale;
         _propagator = propagator ?? new OneSgp4Propagator();
+        _cache = cache;
     }
 
     public Task<SatellitePositionResult> GetPositionAsync(string noradId, DateTimeOffset time, ObserverLocation observer, bool refraction, CancellationToken ct)
@@ -51,7 +56,9 @@ internal sealed class SatelliteService : ISatelliteService
             throw new ArgumentException("stepSeconds must be in [10, 300]");
         var (elements, activeVersion) = Load(noradId, out _);
         var ut1 = Ut1MinusUtc(from);
-        var passes = SatellitePassPredictor.Predict(_propagator, elements, from, to, observer, ut1, minElevationDeg, stepSeconds);
+        var passes = _propagator is OneSgp4Propagator sgp4
+            ? SatellitePassPredictor.Predict(sgp4.PreparedPropagator(elements), from, to, observer, ut1, minElevationDeg, stepSeconds)
+            : SatellitePassPredictor.Predict(_propagator, elements, from, to, observer, ut1, minElevationDeg, stepSeconds);
         return Task.FromResult(new SatellitePassesResult(
             elements.NoradId, elements.Name, from, to, passes, Metadata(elements, activeVersion, "passes")));
     }
@@ -72,7 +79,7 @@ internal sealed class SatelliteService : ISatelliteService
     public Task<IngestionStatus> GetStatusAsync(CancellationToken ct)
     {
         var active = _registry.ActiveVersion(DatasetName);
-        var rows = SatelliteStore.ReadElements(_dbPath);
+        var rows = active is null ? [] : SatelliteStore.ReadElements(_dbPath, active.Version);
         var (fresh, warn, degraded, refuse) = SatelliteStore.Freshness(rows, DateTimeOffset.UtcNow);
         return Task.FromResult(new IngestionStatus(active?.Version, rows.Count, fresh, warn, degraded, refuse));
     }
@@ -92,9 +99,13 @@ internal sealed class SatelliteService : ISatelliteService
         var active = _registry.ActiveVersion(DatasetName);
         if (active is null)
             throw new SatelliteElementsUnavailableException("satellite-elements dataset not ingested");
+        var cacheKey = $"{DatasetName}:{_dbPath}:{active.Version}";
+        if (_cache is not null && _cache.TryGetValue(cacheKey, out IReadOnlyList<OrbitalElementRow>? cached) && cached is not null)
+            return (active.Version, cached);
         var rows = SatelliteStore.ReadElements(_dbPath, active.Version);
         if (rows.Count == 0)
             throw new SatelliteElementsUnavailableException($"satellite-elements dataset {active.Version} has no elements");
+        _cache?.Set(cacheKey, rows, ElementsCacheTtl);
         return (active.Version, rows);
     }
 

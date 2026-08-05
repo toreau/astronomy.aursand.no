@@ -220,7 +220,7 @@ public static class Jobs
     /// pmdecrad,bayer,flam,con,comp,comp_primary,base,lum,var,var_min,var_max.
     /// Sol (dist 0) and rows without usable coordinates are dropped.
     /// </summary>
-    private static Astronomy.SharedKernel.Stars.StarRecord? ParseHygLine(string line)
+    internal static Astronomy.SharedKernel.Stars.StarRecord? ParseHygLine(string line)
     {
         var fields = SplitCsv(line);
         if (fields.Length < 31) return null;

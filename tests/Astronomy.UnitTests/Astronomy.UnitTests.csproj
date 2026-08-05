@@ -27,6 +27,8 @@
     <ProjectReference Include="..\..\src\Astronomy.Modules.Ephemeris\Astronomy.Modules.Ephemeris.csproj" />
     <ProjectReference Include="..\..\src\Astronomy.Modules.Stars\Astronomy.Modules.Stars.csproj" />
     <ProjectReference Include="..\..\src\Astronomy.Modules.Satellites\Astronomy.Modules.Satellites.csproj" />
+    <ProjectReference Include="..\..\src\Astronomy.Modules.Calendars\Astronomy.Modules.Calendars.csproj" />
+    <ProjectReference Include="..\..\src\Astronomy.DataIngestion\Astronomy.DataIngestion.csproj" />
   </ItemGroup>
 
 </Project>

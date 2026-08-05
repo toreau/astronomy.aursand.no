@@ -22,4 +22,8 @@
     <ProjectReference Include="..\Astronomy.SharedKernel\Astronomy.SharedKernel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Astronomy.UnitTests" />
+  </ItemGroup>
+
 </Project>

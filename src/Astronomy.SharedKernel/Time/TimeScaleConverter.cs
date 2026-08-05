@@ -63,13 +63,17 @@ public sealed class TimeScaleConverter
     {
         if (_eopSamples.Count == 0) return 0;
         var target = utcUtc.ToUniversalTime();
-        var last = _eopSamples[0];
-        foreach (var sample in _eopSamples)
+        if (target < _eopSamples[0].Ut1Date) return _eopSamples[0].Ut1MinusUtcSeconds;
+        if (target >= _eopSamples[^1].Ut1Date) return _eopSamples[^1].Ut1MinusUtcSeconds;
+        var lo = 0;
+        var hi = _eopSamples.Count - 1;
+        while (lo < hi)
         {
-            if (sample.Ut1Date > target) break;
-            last = sample;
+            var mid = (lo + hi + 1) / 2;
+            if (_eopSamples[mid].Ut1Date <= target) lo = mid;
+            else hi = mid - 1;
         }
-        return last.Ut1MinusUtcSeconds;
+        return _eopSamples[lo].Ut1MinusUtcSeconds;
     }
 
     private static double TdbMinusTtSeconds(double ttJd)

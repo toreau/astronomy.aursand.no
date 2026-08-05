@@ -1,4 +1,3 @@
-using Astronomy.Modules.Calendars.Application;
 using Astronomy.Modules.Ephemeris.Application;
 using Astronomy.SharedKernel;
 using Astronomy.SharedKernel.Coordinates;
@@ -88,12 +87,10 @@ public interface IAlmanacService
 internal sealed class AlmanacService : IAlmanacService
 {
     private readonly IEphemerisService _ephemeris;
-    private readonly ICalendarService _calendar;
 
-    public AlmanacService(IEphemerisService ephemeris, ICalendarService calendar)
+    public AlmanacService(IEphemerisService ephemeris)
     {
         _ephemeris = ephemeris;
-        _calendar = calendar;
     }
 
     public async Task<DailyAlmanacResult> GetDailyAsync(DailyAlmanacRequest request, CancellationToken ct)
@@ -141,13 +138,15 @@ internal sealed class AlmanacService : IAlmanacService
     {
         var precision = PrecisionMode.Consumer;
         var daysInMonth = DateTime.DaysInMonth(year, month);
-        var days = new List<MonthlyDayEntry>(daysInMonth);
+        var days = new MonthlyDayEntry[daysInMonth];
         var referenceUtc = "12:00:00Z";
         var events = new List<PlanetEvent>();
 
-        for (var day = 1; day <= daysInMonth; day++)
+        // Each day is ~10 engine searches (sun/moon/7 planets rise-set + visibility);
+        // the consumer chain is thread-safe, so compute days in parallel.
+        await Task.WhenAll(Enumerable.Range(0, daysInMonth).Select(day => Task.Run(async () =>
         {
-            var date = new DateOnly(year, month, day);
+            var date = new DateOnly(year, month, day + 1);
             var noon = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).AddHours(12);
 
             var sun = await _ephemeris.GetRiseSetAsync(BodyId.Sun, date, observer, precision, ct);
@@ -164,12 +163,12 @@ internal sealed class AlmanacService : IAlmanacService
                     visibility.Magnitude, visibility.ElongationDeg, visibility.Constellation ?? ""));
             }
 
-            days.Add(new MonthlyDayEntry(
+            days[day] = new MonthlyDayEntry(
                 date.ToString("yyyy-MM-dd"),
                 sun.RiseUtc, sun.SetUtc, sun.TransitUtc,
                 moon.RiseUtc, moon.SetUtc, illumination.PhaseName,
-                planets));
-        }
+                planets);
+        })));
 
         var from = new DateTimeOffset(year, month, 1, 0, 0, 0, TimeSpan.Zero);
         var to = from.AddMonths(1);

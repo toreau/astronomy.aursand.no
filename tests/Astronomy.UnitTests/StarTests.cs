@@ -220,6 +220,36 @@ public class StarTests
     }
 
     [Fact]
+    public async Task ConeSearch_LimitDoesNotDropBrighterStarLaterInCatalog()
+    {
+        // A dim star appears first in catalog order, Arcturus (much brighter)
+        // later; with limit=1 the search must return Arcturus, not the first hit.
+        var dim = new StarRecord("999001", "DimStar", "", "", "", "Boo",
+            Arcturus.RaDeg, Arcturus.DecDeg, 0, 0, 100, 5.0, "K0V");
+        var catalog = new StarCatalog([dim, Arcturus], "v38", "ok");
+        var service = new StarService(catalog, new StubCatalog());
+        var results = await service.ConeSearchAsync(new ConeSearchRequest(
+            new Angle(Arcturus.RaDeg), new Angle(Arcturus.DecDeg), new Angle(10.0), 6.5, 1, null),
+            CancellationToken.None);
+        Assert.Single(results);
+        Assert.Equal("69673", results[0].CatalogueId);
+    }
+
+    [Fact]
+    public async Task ConeSearch_ResultsAreBrightestFirst()
+    {
+        var catalog = new StarCatalog(Sample, "v38", "ok");
+        var service = new StarService(catalog, new StubCatalog());
+        var results = await service.ConeSearchAsync(new ConeSearchRequest(
+            new Angle(0), new Angle(0), new Angle(180.0), 6.5, 50, null),
+            CancellationToken.None);
+        Assert.Equal(3, results.Count);
+        Assert.Equal("Sirius", results[0].Name);
+        Assert.Equal("Arcturus", results[1].Name);
+        Assert.Equal("Vega", results[2].Name);
+    }
+
+    [Fact]
     public void ConstellationAbbreviation_ExpandsToFullName()
     {
         Assert.Equal("Canis Major", StarService.ConstellationName("CMa"));

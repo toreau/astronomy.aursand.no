@@ -76,6 +76,45 @@ public class TimeScaleConverterTests
     }
 
     [Fact]
+    public void Ut1_BeforeFirstSample_ClampsToFirstSample()
+    {
+        var samples = new List<EopSample>
+        {
+            new(new DateTimeOffset(2026, 8, 3, 0, 0, 0, TimeSpan.Zero), 0.25, "test"),
+            new(new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero), 0.36, "test"),
+        };
+        var converter = new TimeScaleConverter(LeapSecondTable.Default, samples);
+        var r = converter.Convert(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(0.25, r.Ut1MinusUtcSeconds, 6);
+    }
+
+    [Fact]
+    public void Ut1_AfterLastSample_ClampsToLastSample()
+    {
+        var samples = new List<EopSample>
+        {
+            new(new DateTimeOffset(2026, 8, 3, 0, 0, 0, TimeSpan.Zero), 0.25, "test"),
+            new(new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero), 0.36, "test"),
+        };
+        var converter = new TimeScaleConverter(LeapSecondTable.Default, samples);
+        var r = converter.Convert(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        Assert.Equal(0.36, r.Ut1MinusUtcSeconds, 6);
+    }
+
+    [Fact]
+    public void Ut1_UnsortedSamples_AreSortedInConstructor()
+    {
+        var samples = new List<EopSample>
+        {
+            new(new DateTimeOffset(2026, 8, 4, 0, 0, 0, TimeSpan.Zero), 0.36, "test"),
+            new(new DateTimeOffset(2026, 8, 3, 0, 0, 0, TimeSpan.Zero), 0.25, "test"),
+        };
+        var converter = new TimeScaleConverter(LeapSecondTable.Default, samples);
+        var r = converter.Convert(new DateTimeOffset(2026, 8, 4, 12, 0, 0, TimeSpan.Zero));
+        Assert.Equal(0.36, r.Ut1MinusUtcSeconds, 6);
+    }
+
+    [Fact]
     public void Mjd_Conversion_RoundTrips()
     {
         var jd = JulianDate.FromUnixSeconds(0);

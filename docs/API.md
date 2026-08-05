@@ -30,27 +30,51 @@ Common query parameters:
 
 ## System
 
-### `GET /healthz`
+### `GET /health/live`
 
 ```bash
-curl https://astronomy.aursand.no/healthz
+curl https://astronomy.aursand.no/health/live
 ```
 
 ```json
 { "status": "ok" }
 ```
 
-### `GET /ready`
+Liveness probe: 200 whenever the process is up.
+
+### `GET /health/ready`
 
 ```bash
-curl https://astronomy.aursand.no/ready
+curl https://astronomy.aursand.no/health/ready
 ```
 
 ```json
-{ "status": "ready", "db": "ok", "kernels": "ok" }
+{
+  "status": "ready",
+  "db": "ok",
+  "kernels": "ok",
+  "starCatalog": "ok",
+  "datasets": {
+    "leap-seconds": "20260805",
+    "eop-ut1": "20260805",
+    "eop-c04": "20260805",
+    "star-catalog-hyg": "v38",
+    "satellite-elements": "20260805"
+  },
+  "satelliteElements": "ok (20260805, 122 elements)"
+}
 ```
 
-`kernels: "unavailable"` indicates the reference tier cannot serve.
+Readiness probe: verifies the database opens and the registry schema exists,
+then reports each component (reference kernels, star catalog, active dataset
+versions, satellite elements). Returns 200 whenever the database is healthy —
+components report `unavailable (...)` without failing the probe — and
+503 with `"status": "not-ready"` when the database or schema is broken.
+
+### Position endpoints and observers
+
+`latitude`/`longitude` are **required** when `frame=horizontal` (they define
+the observer). For `icrs`/`of-date` they are optional and unused.
 
 ---
 

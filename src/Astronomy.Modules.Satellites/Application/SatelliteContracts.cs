@@ -2,6 +2,7 @@ using Astronomy.SharedKernel;
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
 using Astronomy.SharedKernel.Time;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Astronomy.Modules.Satellites.Application;
@@ -88,7 +89,8 @@ public static class SatellitesModuleRegistrar
         services.AddSingleton<ISatelliteService>(sp =>
             new SatelliteService(dbPath,
                 sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetRegistry>(),
-                sp.GetRequiredService<TimeScaleConverter>()));
+                sp.GetRequiredService<TimeScaleConverter>(),
+                cache: sp.GetService<IMemoryCache>()));
         return services;
     }
 }

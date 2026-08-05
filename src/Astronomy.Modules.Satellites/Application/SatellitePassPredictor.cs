@@ -21,6 +21,16 @@ public static class SatellitePassPredictor
     public static IReadOnlyList<SatellitePass> Predict(
         IOrbitalPropagator propagator, OrbitalElementRow elements,
         DateTimeOffset from, DateTimeOffset to, ObserverLocation observer,
+        double ut1MinusUtc, double minElevationDeg, double stepSeconds) =>
+        Predict(t => propagator.Propagate(elements, t), from, to, observer, ut1MinusUtc, minElevationDeg, stepSeconds);
+
+    /// <summary>
+    /// Delegate-driven variant: <paramref name="propagate"/> lets callers hoist
+    /// per-element setup (e.g. TLE parsing) out of the thousands of evaluations.
+    /// </summary>
+    public static IReadOnlyList<SatellitePass> Predict(
+        Func<DateTimeOffset, TemeVector> propagate,
+        DateTimeOffset from, DateTimeOffset to, ObserverLocation observer,
         double ut1MinusUtc, double minElevationDeg, double stepSeconds)
     {
         if (to <= from) return [];
@@ -30,7 +40,7 @@ public static class SatellitePassPredictor
 
         double AltAt(DateTimeOffset t)
         {
-            var teme = propagator.Propagate(elements, t);
+            var teme = propagate(t);
             var pef = SatelliteFrames.TemeToPef(teme, SatelliteFrames.GmstDegrees(Jd(t)) + gmstOffset);
             var (alt, _, _) = SatelliteFrames.Topocentric(pef.X, pef.Y, pef.Z, obsEcef.X, obsEcef.Y, obsEcef.Z,
                 observer.Latitude.Degrees, observer.Longitude.Degrees, refraction: false);

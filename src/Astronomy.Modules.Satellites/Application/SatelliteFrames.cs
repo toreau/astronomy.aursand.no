@@ -1,5 +1,3 @@
-using Astronomy.SharedKernel.Coordinates;
-
 namespace Astronomy.Modules.Satellites.Application;
 
 /// <summary>
@@ -91,7 +89,4 @@ public static class SatelliteFrames
         }
         return (alt, az, range);
     }
-
-    public static ObserverLocation ObserverFromDegrees(double latitude, double longitude, double? elevationMeters) =>
-        ObserverLocation.FromDegrees(latitude, longitude, (elevationMeters ?? 0) / 1000.0);
 }
