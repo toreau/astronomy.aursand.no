@@ -210,7 +210,32 @@ public static class HostGates
         return failures == 0 ? 0 : 1;
     }
 
-    private static readonly object ThreadTestSync = new();
+    public static int SpiceProbe(string kernelDir, string body, string utcText)
+    {
+        var reference = new SpiceReferenceEphemeris(kernelDir);
+        if (!reference.IsAvailable)
+        {
+            Console.WriteLine($"spice-probe: kernels unavailable: {reference.UnavailableReason}");
+            return 1;
+        }
+        Console.WriteLine("spice-probe: kernels: " + string.Join(", ",
+            reference.KernelVersions.Select(kv => $"{kv.Key} sha256:{kv.Value}")));
+        var utc = DateTimeOffset.Parse(utcText, null, DateTimeStyles.RoundtripKind);
+        foreach (var apparent in new[] { false, true })
+        {
+            try
+            {
+                var pos = reference.Position(BodyId.AllBodies.First(b => b.Name == body), utc, apparent);
+                Console.WriteLine($"spice-probe: {body} {utc:O} abcorr={pos.AberrationCorrection} ra={pos.RaDeg:F6} dec={pos.DecDeg:F6} r={pos.DistanceKm:F1} km");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"spice-probe: {body} {utc:O} FAIL {ex.Message.Split('\n')[0]}");
+            }
+        }
+        return 0;
+    }
+
 
     public static int SpiceThreadTest(string kernelDir)
     {

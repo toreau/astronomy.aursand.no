@@ -38,6 +38,10 @@ switch (mode)
     case "spice-threadtest":
         return HostGates.SpiceThreadTest(args.Length > 1 ? args[1] : "/data/kernels");
 
+    case "spice-probe":
+        return HostGates.SpiceProbe(args.Length > 1 ? args[1] : "/data/kernels",
+            args.Length > 2 ? args[2] : "mars", args.Length > 3 ? args[3] : "2026-08-04T12:00:00Z");
+
     case "omm":
         await OmmCommandAsync(args[1..]);
         break;
