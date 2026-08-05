@@ -104,9 +104,12 @@ Apparent (`LT+S`) vs astrometric sanity: max 20.9″ (Earth's stellar aberration
    200 unlocked `spkpos`, production lib) crashed the process with
    `SPICE(BADSUBSCRIPT)` in the time subsystem and produced
    `SPICE(INVALIDTIMESTRING)` corruption; the pool's global lock is required.
-   (Methodology note: the corruption poisons the in-process pool, so the
-   locked-phase measurement in the same process is not meaningful — each phase
-   should run in a fresh process; the S0.3 spike measured locked = 0.)
+   **Clean separate-process measurement (2026-08-05)**: the two phases now run
+   in separate processes so corruption cannot poison the locked measurement —
+   UNLOCKED: 8/8 threads corrupted (`SPICE(TRACESTACKEMPTY)` + `CHKOUT: An
+   attempt to check out was made when no modules were checked in`,
+   `SPICE(NAMESDONOTMATCH)` — the S0.3 CHKOUT corruption class, reproduced);
+   LOCKED (fresh process): **0 corrupted — global lock VERIFIED**.
 6. **The mirror's `de440s.bsp`** (sha256 `c1c7feea…`) is the NAIF short product:
    14 objects, barycenters only for the outer planets. The engine-vs-Horizons
    Phase-3 gate (≤ 22.5″) was never affected by this.
