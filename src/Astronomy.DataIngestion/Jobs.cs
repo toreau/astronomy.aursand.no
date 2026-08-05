@@ -81,7 +81,7 @@ public static class Jobs
             return 1;
         }
 
-        var samples = new List<(double Mjd, double Ut1MinusUtc)>();
+        var samples = new List<(double Mjd, double Ut1MinusUtc, double X, double Y)>();
         foreach (var line in text.Split('\n'))
         {
             var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
@@ -91,7 +91,11 @@ public static class Jobs
             if (!double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) continue;
             if (mjd is < 40000 or > 80000) continue;
             if (!double.TryParse(parts[6], NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) continue;
-            samples.Add((mjd, dut1));
+            var x = 0.0;
+            var y = 0.0;
+            if (parts.Length > 7 && double.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var xv)) x = xv;
+            if (parts.Length > 8 && double.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var yv)) y = yv;
+            samples.Add((mjd, dut1, x, y));
         }
         if (samples.Count < 1000)
         {
@@ -109,8 +113,8 @@ public static class Jobs
         var version = DateTime.UtcNow.ToString("yyyyMMdd");
         var dir = Path.Combine(dataRoot, "datasets", "eop-c04", version);
         Directory.CreateDirectory(dir);
-        var csv = new List<string> { "mjd,ut1_minus_utc_seconds" };
-        csv.AddRange(samples.Select(s => $"{s.Mjd.ToString("F3", CultureInfo.InvariantCulture)},{s.Ut1MinusUtc.ToString("F7", CultureInfo.InvariantCulture)}"));
+        var csv = new List<string> { "mjd,ut1_minus_utc_seconds,x_arcsec,y_arcsec" };
+        csv.AddRange(samples.Select(s => $"{s.Mjd.ToString("F3", CultureInfo.InvariantCulture)},{s.Ut1MinusUtc.ToString("F7", CultureInfo.InvariantCulture)},{s.X.ToString("F6", CultureInfo.InvariantCulture)},{s.Y.ToString("F6", CultureInfo.InvariantCulture)}"));
         await File.WriteAllLinesAsync(Path.Combine(dir, "eop-c04.csv"), csv);
         var checksum = Sha256(string.Join('\n', csv));
 

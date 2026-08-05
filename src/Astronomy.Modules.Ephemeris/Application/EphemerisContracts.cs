@@ -146,9 +146,6 @@ public static class EphemerisModuleRegistrar
 {
     public static IServiceCollection AddEphemerisModule(this IServiceCollection services)
     {
-        services.AddSingleton<Astronomy.Modules.Ephemeris.Reference.IReferenceEphemeris>(_ =>
-            new Astronomy.Modules.Ephemeris.Reference.SpiceReferenceEphemeris(
-                Environment.GetEnvironmentVariable("ASTRONOMY_KERNEL_PATH") ?? "/data/kernels"));
         services.AddSingleton<IEphemerisService>(sp =>
             new EphemerisService(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(),
                 sp.GetRequiredService<Astronomy.Modules.Ephemeris.Reference.IReferenceEphemeris>()));

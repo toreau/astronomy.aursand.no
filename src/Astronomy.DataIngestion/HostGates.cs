@@ -183,45 +183,62 @@ public static class HostGates
         Console.WriteLine("compare-spice: kernels: " + string.Join(", ",
             reference.KernelVersions.Select(kv => $"{kv.Key} sha256:{kv.Value}")));
         var failures = 0;
-        var skippedPre1972 = 0;
+        var skippedPre1900 = 0;
         foreach (var (name, _) in Bodies)
         {
             var path = Path.Combine(fixtureDir, $"horizons_{name}.csv");
             if (!File.Exists(path)) { Console.WriteLine($"compare-spice: {name} - no fixture"); continue; }
             var body = BodyId.AllBodies.First(b => b.Name == name);
             var seps = new List<double>();
+            var sepsOfDate = new List<double>();
             var sepsAberr = new List<double>();
+            var pre1972Seps = new List<double>();
+            var post1972Seps = new List<double>();
             var n = 0;
-            var skipThisBody = 0;
+            var skippedThisBody = 0;
             foreach (var line in File.ReadAllLines(path))
             {
                 var p = line.Split(',');
                 if (p.Length < 5) continue;
                 var utc = DateTimeOffset.Parse(p[0], null, DateTimeStyles.RoundtripKind);
-                if (utc.UtcDateTime < new DateTime(1972, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+                if (utc.UtcDateTime < new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc))
                 {
-                    skippedPre1972++;
-                    skipThisBody++;
+                    skippedPre1900++;
+                    skippedThisBody++;
                     continue;
                 }
                 var astro = reference.Position(body, utc, apparent: false);
-                seps.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), astro.RaDeg, astro.DecDeg));
+                var sep = Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), astro.RaDeg, astro.DecDeg);
+                seps.Add(sep);
+                if (utc.UtcDateTime < new DateTime(1972, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+                    pre1972Seps.Add(sep);
+                else
+                    post1972Seps.Add(sep);
                 if (n == 0)
                     Console.WriteLine($"compare-spice: {name} first row utc={utc:O} hz_ra={p[1]} hz_dec={p[2]} spice_ra={astro.RaDeg:F6} spice_dec={astro.DecDeg:F6} r={astro.DistanceKm:F1} km abcorr={astro.AberrationCorrection}");
                 var apparent = reference.Position(body, utc, apparent: true);
                 sepsAberr.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), apparent.RaDeg, apparent.DecDeg));
+                var ofDate = reference.OfDatePosition(body, utc);
+                sepsOfDate.Add(Sep(double.Parse(p[3], CultureInfo.InvariantCulture), double.Parse(p[4], CultureInfo.InvariantCulture), ofDate.RaDeg, ofDate.DecDeg));
                 n++;
             }
             var max = seps.Max();
+            var maxOfDate = sepsOfDate.Max();
             var maxAberr = sepsAberr.Max();
-            var pass = max <= 1.0;
+            var maxPre1972 = pre1972Seps.Count > 0 ? pre1972Seps.Max() : 0.0;
+            var maxPost1972 = post1972Seps.Count > 0 ? post1972Seps.Max() : 0.0;
+            // q1 gate: 1" for 1972+; the moon's pre-1972 rows use 3"
+            // (historical delta-T uncertainty ~1s). q2 (of-date apparent) <= 1".
+            var pass = maxPost1972 <= 1.0
+                && maxPre1972 <= (name == "moon" ? 3.0 : 1.0)
+                && maxOfDate <= 1.0;
             if (!pass) failures++;
             var fileLines = File.ReadAllLines(path).ToList();
             var worst = seps.Select((s, i) => (S: s, I: i)).OrderByDescending(x => x.S).Take(3)
-                .Select(x => $"{fileLines[skipThisBody + x.I].Split(',')[0]}={x.S:F2}\"");
-            Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" {(pass ? "PASS" : "FAIL")} (gate <= 1\") | apparent-vs-astrometric max={maxAberr,7:F1}\" (aberration sanity, not gated) | worst: {string.Join(" ", worst)}");
+                .Select(x => $"{fileLines[skippedThisBody + x.I].Split(',')[0]}={x.S:F2}\"");
+            Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" (pre1972 max={maxPre1972,7:F3}\") | of-date-apparent mean={sepsOfDate.Average(),7:F3}\" max={maxOfDate,7:F3}\" {(pass ? "PASS" : "FAIL")} (q1 <= 1\"; moon pre1972 <= 3\"; q2 <= 1\") | aberration max={maxAberr,7:F1}\" (sanity) | worst: {string.Join(" ", worst)}");
         }
-        Console.WriteLine($"compare-spice: (skipped {skippedPre1972} pre-1972 rows - reference tier validated for the leap-second era)");
+        Console.WriteLine($"compare-spice: (skipped {skippedPre1900} pre-1900 rows - reference tier validated from 1900-01-01)");
         Console.WriteLine(failures == 0 ? "compare-spice: REFERENCE GATE PASS" : $"compare-spice: REFERENCE GATE FAIL ({failures} bodies over 1\")");
         return failures == 0 ? 0 : 1;
     }
@@ -706,11 +723,16 @@ public static class HostGates
             Console.WriteLine($"naif: {Path.GetFileName(tmp),-26} deleted (stray partial download)");
         }
 
+        // EOP C04 (IERS) refresh - daily product, refreshed on every naif run
+        // (cheap, ~3.6MB; date-based version restages in place).
+        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+        var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
+        var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
+        Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
+
         // Star catalog - ingest once if not active yet (the HYG catalog is static;
         // this gap-fill runs on every naif invocation regardless of the throttle,
         // but only acts when the dataset is missing).
-        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
-        var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
         var starExit = 0;
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
         if (registry.ActiveVersion("star-catalog-hyg") is null)
@@ -724,25 +746,20 @@ public static class HostGates
             Console.WriteLine("naif: star catalog already active, skipping");
         }
 
-        // Gate-after-refresh + EOP C04 refresh: heavy steps, throttled to at most
-        // once per 24h via a marker file, so any cron cadence is safe (weekly cron
-        // runs them once; a temporary every-5-min cadence only does the cheap
-        // kernel checks).
+        // Gate-after-refresh: throttled to at most once per 24h via a marker file,
+        // so any cron cadence is safe (weekly cron runs it once; a temporary
+        // every-5-min cadence only does the cheap kernel checks + C04 refresh).
         var marker = Path.Combine(Path.GetDirectoryName(kernelDir) ?? "/data", "naif-refresh.last");
         var due = !File.Exists(marker) || DateTime.UtcNow - File.GetLastWriteTimeUtc(marker) > TimeSpan.FromHours(24);
         if (!due)
         {
-            Console.WriteLine($"naif: gate+c04 skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
-            return starExit == 0 ? 0 : 1;
+            Console.WriteLine($"naif: gate skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
+            return c04Exit == 0 && starExit == 0 ? 0 : 1;
         }
 
         Console.WriteLine("naif: running reference gate (compare-spice)...");
         var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
         Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
-
-        // EOP C04 (IERS) refresh - part of the weekly data-refresh job.
-        var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
-        Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
         if (gateExit == 0 && c04Exit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));

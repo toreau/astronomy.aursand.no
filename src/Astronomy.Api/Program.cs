@@ -25,6 +25,13 @@ builder.Services.AddSingleton(sp =>
     TimeDatasetLoaders.CreateTimeScaleConverter(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), dataRoot));
 builder.Services.AddSingleton(sp =>
     Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), dataRoot));
+builder.Services.AddSingleton<Astronomy.Modules.Ephemeris.Reference.IReferenceEphemeris>(sp =>
+{
+    var eopC04 = Astronomy.Infrastructure.Time.EopC04Loader.LoadEopC04(
+        sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), dataRoot);
+    return new Astronomy.Modules.Ephemeris.Reference.SpiceReferenceEphemeris(
+        Environment.GetEnvironmentVariable("ASTRONOMY_KERNEL_PATH") ?? "/data/kernels", eopC04);
+});
 builder.Services.AddCalendarsModule();
 builder.Services.AddTimeModule();
 builder.Services.AddEphemerisModule();

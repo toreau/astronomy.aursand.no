@@ -65,13 +65,35 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task SunPosition_AdvancedPrecision_OfDate_Returns400()
+    public async Task SunPosition_AdvancedPrecision_WithoutKernels_Returns503()
     {
+        // of-date at advanced/reference is now supported by the ERFA chain; in CI
+        // the kernels are absent, so the reference tier is unavailable (503).
         var client = _factory.CreateClient();
         var response = await client.GetAsync(
             "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=of-date&positionType=apparent&refraction=none&precision=advanced");
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5030", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SunPosition_Pre1972Reference_WithoutKernels_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/position?time=1900-06-01T12:00:00Z&frame=icrs&positionType=astrometric&refraction=none&precision=reference");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5030", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SunPosition_HorizontalReference_WithoutKernels_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=horizontal&positionType=astrometric&refraction=none&precision=reference");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5030", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

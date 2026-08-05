@@ -6,7 +6,7 @@ namespace Astronomy.UnitTests;
 
 public class ReferenceTierTests
 {
-    private sealed class FakeReferenceEphemeris(bool available = true) : IReferenceEphemeris
+    private sealed class FakeReferenceEphemeris(bool available = true, bool canDoHorizontal = false) : IReferenceEphemeris
     {
         public bool IsAvailable { get; } = available;
         public string UnavailableReason { get; } = available ? "" : "test kernel pool unavailable";
@@ -14,12 +14,23 @@ public class ReferenceTierTests
             new Dictionary<string, string> { ["de440s.bsp"] = "testsha8" };
         public int CallCount { get; private set; }
         public bool? LastApparent { get; private set; }
+        public int OfDateCallCount { get; private set; }
+        public bool CanDoHorizontal { get; } = canDoHorizontal;
         public ReferencePosition Position(BodyId body, DateTimeOffset utc, bool apparent)
         {
             CallCount++;
             LastApparent = apparent;
             return new ReferencePosition(123.456, -45.678, 149_000_000.0, apparent ? "LT+S" : "LT");
         }
+
+        public ReferencePosition OfDatePosition(BodyId body, DateTimeOffset utc)
+        {
+            OfDateCallCount++;
+            return new ReferencePosition(210.123, 10.5, 149_000_000.0, "LT+S:of-date");
+        }
+
+        public (double AltDeg, double AzDeg) HorizontalPosition(BodyId body, DateTimeOffset utc, ObserverLocation observer, bool refraction) =>
+            (42.0, 180.0);
     }
 
     private static PositionRequest Request(string frame = "icrs", string positionType = "astrometric", PrecisionMode precision = PrecisionMode.Reference) =>
@@ -78,12 +89,52 @@ public class ReferenceTierTests
     }
 
     [Fact]
-    public async Task ReferencePrecision_OfDate_Throws()
+    public async Task ReferencePrecision_OfDate_UsesErfaPath()
     {
-        var service = new EphemerisService(new StubCatalog(), new FakeReferenceEphemeris());
-        var ex = await Assert.ThrowsAsync<ArgumentException>(() =>
-            service.GetPositionAsync(Request(frame: "of-date", positionType: "apparent"), CancellationToken.None));
-        Assert.Contains("J2000", ex.Message);
+        var fake = new FakeReferenceEphemeris();
+        var service = new EphemerisService(new StubCatalog(), fake);
+        var result = await service.GetPositionAsync(
+            Request(frame: "of-date", positionType: "apparent"), CancellationToken.None);
+
+        Assert.Equal(210.123, result.RightAscensionDeg);
+        Assert.Equal(10.5, result.DeclinationDeg);
+        Assert.Equal(1, fake.OfDateCallCount);
+        Assert.Contains(result.Metadata.Algorithms, a => a.Version.Contains("of-date-apparent:erfa"));
+    }
+
+    [Fact]
+    public async Task ReferencePrecision_OfDate_RequiresApparent()
+    {
+        var fake = new FakeReferenceEphemeris();
+        var service = new EphemerisService(new StubCatalog(), fake);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.GetPositionAsync(Request(frame: "of-date", positionType: "astrometric"), CancellationToken.None));
+        Assert.Equal(0, fake.OfDateCallCount);
+    }
+
+    [Fact]
+    public async Task ReferencePrecision_Horizontal_UsesErfaChain_WhenC04Available()
+    {
+        var fake = new FakeReferenceEphemeris(canDoHorizontal: true);
+        var service = new EphemerisService(new StubCatalog(), fake);
+        var result = await service.GetPositionAsync(Request(frame: "horizontal"), CancellationToken.None);
+
+        Assert.Equal(42.0, result.AltitudeDeg);
+        Assert.Equal(180.0, result.AzimuthDeg);
+        Assert.DoesNotContain(result.Metadata.Warnings, w => w.Code == "AST-7003");
+        Assert.Contains(result.Metadata.Algorithms, a => a.Version.Contains("horizontal:erfa-c2t"));
+        Assert.Contains(result.Metadata.Datasets, d => d.Name == "eop-c04");
+    }
+
+    [Fact]
+    public async Task ReferencePrecision_Horizontal_DegradesToEngine_WithoutC04()
+    {
+        var fake = new FakeReferenceEphemeris(canDoHorizontal: false);
+        var service = new EphemerisService(new StubCatalog(), fake);
+        var result = await service.GetPositionAsync(Request(frame: "horizontal"), CancellationToken.None);
+
+        Assert.Contains(result.Metadata.Warnings, w => w.Code == "AST-7003");
+        Assert.Null(result.Metadata.Algorithms.FirstOrDefault(a => a.Version.Contains("erfa")));
     }
 
     [Fact]
