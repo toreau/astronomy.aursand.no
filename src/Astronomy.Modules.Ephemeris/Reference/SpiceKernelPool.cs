@@ -17,9 +17,8 @@ internal sealed class SpiceKernelPool
     private static readonly object Sync = new();
 
     private static readonly string[] BaseKernels = ["naif0012.tls", "pck00010.tpc"];
-    private static readonly string[] OptionalKernels = ["earth_assoc_itrf93.tf"];
-    private const string FullKernel = "de440.bsp";
-    private const string ShortKernel = "de440s.bsp";
+    private static readonly string[] OptionalKernels = ["de440s_plus_MarsPC.bsp", "earth_assoc_itrf93.tf"];
+    private static readonly string[] PlanetaryKernels = ["de441.bsp", "de440.bsp", "de440s.bsp"];
 
     public bool IsAvailable { get; }
 
@@ -28,15 +27,19 @@ internal sealed class SpiceKernelPool
     public IReadOnlyDictionary<string, string> KernelVersions { get; } = new Dictionary<string, string>();
 
     /// <summary>
-    /// Epoch coverage of the loaded planetary kernel: de440.bsp spans 1620-2170,
-    /// de440s.bsp (reduced NAIF short product) 1849-2150. Both provide planet
-    /// CENTER segments for the inner planets (Sun, Moon, Mercury, Venus, Earth)
-    /// and barycenter segments for the outer planets; the reference tier uses
-    /// planet barycenters for Mars..Neptune (center-vs-barycenter <= 0.05").
+    /// Epoch coverage of the loaded planetary kernel: de441/de440 span 1620-2170,
+    /// de440s (reduced NAIF short product) 1849-2150. The DE-series SPKs carry planet
+    /// CENTER segments for the inner planets (Sun, Moon, Mercury, Venus, Earth) and
+    /// BARYCENTER segments for the outer planets; the reference tier uses planet
+    /// barycenters for Mars..Neptune unless de440s_plus_MarsPC.bsp is loaded
+    /// (Mars center). Barycenter-vs-center offset is <= 0.05" for all outer planets.
+    /// de441 is preferred because Horizons computes its astrometric quantities from it.
     /// </summary>
     public DateTime CoverageStartUtc { get; } = new(1849, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
     public DateTime CoverageEndUtc { get; } = new(2150, 12, 31, 23, 59, 59, DateTimeKind.Utc);
+
+    public bool HasKernel(string name) => KernelVersions.ContainsKey(name);
 
     public SpiceKernelPool(string kernelDir)
     {
@@ -46,7 +49,12 @@ internal sealed class SpiceKernelPool
             return;
         }
         var versions = new Dictionary<string, string>();
-        var planetKernel = File.Exists(Path.Combine(kernelDir, FullKernel)) ? FullKernel : ShortKernel;
+        var planetKernel = PlanetaryKernels.FirstOrDefault(k => File.Exists(Path.Combine(kernelDir, k)));
+        if (planetKernel is null)
+        {
+            Reason = $"no planetary kernel found in {kernelDir} (looked for {string.Join(", ", PlanetaryKernels)})";
+            return;
+        }
         var kernels = new List<string> { planetKernel };
         kernels.AddRange(BaseKernels);
         foreach (var optional in OptionalKernels)
@@ -63,7 +71,7 @@ internal sealed class SpiceKernelPool
                 return;
             }
             versions[name] = Sha256Prefix(path);
-            if (name == FullKernel)
+            if (name is "de441.bsp" or "de440.bsp")
             {
                 CoverageStartUtc = new DateTime(1620, 1, 1, 0, 0, 0, DateTimeKind.Utc);
                 CoverageEndUtc = new DateTime(2170, 12, 31, 23, 59, 59, DateTimeKind.Utc);

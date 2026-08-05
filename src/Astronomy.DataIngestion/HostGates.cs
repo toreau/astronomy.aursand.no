@@ -367,16 +367,37 @@ public static class HostGates
             Console.WriteLine($"naif: official de440 listing FAIL {ex.Message.Split('\n')[0]}");
         }
 
+        const string JplFtpBase = "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/";
+        foreach (var (name, url) in new[]
+        {
+            ("de441.bsp", JplFtpBase + "de441.bsp"),
+            ("de440s_plus_MarsPC.bsp", JplFtpBase + "de440s_plus_MarsPC.bsp"),
+            ("de440.bsp", JplFtpBase + "de440.bsp"),
+        })
+        {
+            try
+            {
+                var bytes = await hc.GetByteArrayAsync(url);
+                var shaKernel = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+                await File.WriteAllBytesAsync(Path.Combine(kernelDir, name), bytes);
+                Console.WriteLine($"naif: {name,-26} {bytes.Length,10} bytes sha256={shaKernel}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"naif: {name,-26} FAIL {ex.Message.Split('\n')[0]}");
+            }
+        }
+
         try
         {
             var official = await hc.GetByteArrayAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp");
             var sha440 = Convert.ToHexString(SHA256.HashData(official)).ToLowerInvariant();
             await File.WriteAllBytesAsync(Path.Combine(kernelDir, "de440.bsp"), official);
-            Console.WriteLine($"naif: de440.bsp {official.Length} bytes sha256={sha440} (full planetary kernel, planet-center segments)");
+            Console.WriteLine($"naif: de440.bsp (naif mirror) {official.Length} bytes sha256={sha440}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"naif: de440.bsp FAIL {ex.Message.Split('\n')[0]} (reference tier for outer planets requires it)");
+            Console.WriteLine($"naif: de440.bsp (naif mirror) FAIL {ex.Message.Split('\n')[0]}");
         }
 
         try

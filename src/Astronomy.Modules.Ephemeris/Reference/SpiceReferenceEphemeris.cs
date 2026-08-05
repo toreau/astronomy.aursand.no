@@ -35,24 +35,25 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
 
         var abcorr = apparent ? "LT+S" : "LT";
         var et = _pool.Et(utc);
-        var (xyz, _) = _pool.SpkPos(SpiceName(body), et, abcorr);
+        var (xyz, _) = _pool.SpkPos(SpiceName(body, _pool.HasKernel("de440s_plus_MarsPC.bsp")), et, abcorr);
         var (rangeKm, raDeg, decDeg) = _pool.RecRad(xyz);
         return new ReferencePosition(raDeg, decDeg, rangeKm, abcorr);
     }
 
     /// <summary>
-    /// de440s/de440 provide planet CENTER segments for Sun, Moon, Mercury, Venus
-    /// (and Earth); for the outer planets only BARYCENTER segments exist. The
-    /// barycenter-vs-center offset is <= 0.05" for all outer planets (Jupiter ~100 km
-    /// at 5.2 AU), so barycenter targets are used for Mars..Neptune.
+    /// The DE-series SPKs (de441/de440/de440s) provide planet CENTER segments for
+    /// Sun, Moon, Mercury, Venus (and Earth); for the outer planets only BARYCENTER
+    /// segments exist. The barycenter-vs-center offset is <= 0.05" for all outer
+    /// planets (Jupiter ~100 km at 5.2 AU), so barycenter targets are used for
+    /// Mars..Neptune unless de440s_plus_MarsPC.bsp is loaded (Mars planet center).
     /// </summary>
-    private static string SpiceName(BodyId body) => body.Name switch
+    private static string SpiceName(BodyId body, bool marsCenterLoaded) => body.Name switch
     {
         "sun" => "SUN",
         "moon" => "MOON",
         "mercury" => "MERCURY",
         "venus" => "VENUS",
-        "mars" => "MARS BARYCENTER",
+        "mars" => marsCenterLoaded ? "MARS" : "MARS BARYCENTER",
         "jupiter" => "JUPITER BARYCENTER",
         "saturn" => "SATURN BARYCENTER",
         "uranus" => "URANUS BARYCENTER",
