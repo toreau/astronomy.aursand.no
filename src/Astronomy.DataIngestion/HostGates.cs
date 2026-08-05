@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using CosineKitty;
 using System.Security.Cryptography;
 using Astronomy.Modules.Ephemeris.Application;
@@ -240,21 +241,57 @@ public static class HostGates
     {
         var path = Path.Combine(kernelDir, fileName);
         if (!File.Exists(path)) { Console.WriteLine($"spice-cov: no such file {path}"); return 1; }
-        var ids = new int[10000];
-        CSpice.SpkObj(path, ids, out var count);
-        Console.WriteLine($"spice-cov: {fileName} objects={count}");
-        var cover = new double[20000];
-        for (var i = 0; i < count; i++)
+        var lsk = Path.Combine(kernelDir, "naif0012.tls");
+        if (File.Exists(lsk)) CSpice.Furnsh(lsk);
+        const int maxObj = 10000;
+        const int ctrl = 6;
+        var ids = new int[ctrl + maxObj];
+        var idsHandle = GCHandle.Alloc(ids, GCHandleType.Pinned);
+        var idsCell = new SpiceCell
         {
-            CSpice.SpkCov(path, ids[i], out var nseg, cover);
-            var intervals = new List<string>();
-            for (var s = 0; s < nseg; s++)
+            Dtype = 2, // SPICE_INT
+            Size = maxObj,
+            IsSet = 1,
+            Base = idsHandle.AddrOfPinnedObject(),
+            Data = idsHandle.AddrOfPinnedObject() + ctrl * sizeof(int),
+        };
+        try
+        {
+            CSpice.SpkObj(path, ref idsCell);
+            Console.WriteLine($"spice-cov: {fileName} card={idsCell.Card}");
+            var objs = new List<int>();
+            for (var i = 0; i < Math.Min(idsCell.Card, 200); i++) objs.Add(ids[ctrl + i]);
+            Console.WriteLine($"spice-cov:   objects: {string.Join(",", objs)}");
+
+            var cover = new double[ctrl + 2 * maxObj];
+            var coverHandle = GCHandle.Alloc(cover, GCHandleType.Pinned);
+            var coverCell = new SpiceCell
             {
-                var start = UtcString(cover[s * 2]);
-                var end = UtcString(cover[s * 2 + 1]);
-                intervals.Add($"{start}..{end}");
+                Dtype = 1, // SPICE_DP
+                Size = 2 * maxObj,
+                Base = coverHandle.AddrOfPinnedObject(),
+                Data = coverHandle.AddrOfPinnedObject() + ctrl * sizeof(double),
+            };
+            try
+            {
+                foreach (var id in objs)
+                {
+                    CSpice.SpkCov(path, id, ref coverCell);
+                    var intervals = new List<string>();
+                    var n = coverCell.Card / 2;
+                    for (var s = 0; s < n; s++)
+                        intervals.Add($"{UtcString(cover[ctrl + s * 2])}..{UtcString(cover[ctrl + s * 2 + 1])}");
+                    Console.WriteLine($"spice-cov:   id={id,5} intervals={string.Join(" ", intervals)}");
+                }
             }
-            Console.WriteLine($"spice-cov:   id={ids[i],5} nseg={nseg} {string.Join(" ", intervals)}");
+            finally
+            {
+                coverHandle.Free();
+            }
+        }
+        finally
+        {
+            idsHandle.Free();
         }
         return 0;
     }
