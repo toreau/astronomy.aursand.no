@@ -205,7 +205,9 @@ public static class HostGates
             var maxAberr = sepsAberr.Max();
             var pass = max <= 1.0;
             if (!pass) failures++;
-            Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" {(pass ? "PASS" : "FAIL")} (gate <= 1\") | apparent-vs-astrometric max={maxAberr,7:F1}\" (aberration sanity, not gated)");
+            var worst = seps.Select((s, i) => (S: s, I: i)).OrderByDescending(x => x.S).Take(3)
+                .Select(x => $"{File.ReadLines(path).Skip(x.I).First().Split(',')[0]}={x.S:F2}\"");
+            Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" {(pass ? "PASS" : "FAIL")} (gate <= 1\") | apparent-vs-astrometric max={maxAberr,7:F1}\" (aberration sanity, not gated) | worst: {string.Join(" ", worst)}");
         }
         Console.WriteLine(failures == 0 ? "compare-spice: REFERENCE GATE PASS" : $"compare-spice: REFERENCE GATE FAIL ({failures} bodies over 1\")");
         return failures == 0 ? 0 : 1;
