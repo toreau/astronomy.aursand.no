@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Astronomy.SharedKernel\Astronomy.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\Astronomy.Modules.Ephemeris\Astronomy.Modules.Ephemeris.csproj" />
+    <ProjectReference Include="..\..\src\Astronomy.Modules.Stars\Astronomy.Modules.Stars.csproj" />
   </ItemGroup>
 
 </Project>

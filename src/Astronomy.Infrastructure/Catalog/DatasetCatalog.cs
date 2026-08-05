@@ -14,7 +14,7 @@ public class DatasetCatalog : IDatasetCatalog
         _dataRoot = dataRoot;
     }
 
-    public IReadOnlyList<string> DatasetNames { get; } = ["leap-seconds", "eop-ut1"];
+    public IReadOnlyList<string> DatasetNames { get; } = ["leap-seconds", "eop-ut1", "eop-c04", "star-catalog-hyg"];
 
     public DatasetRef? ActiveVersion(string datasetName) => _registry.ActiveVersion(datasetName);
 

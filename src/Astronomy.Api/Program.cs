@@ -23,6 +23,8 @@ Console.WriteLine($"astronomy-api: db={dbPath} dataRoot={dataRoot}");
 builder.Services.AddAstronomyInfrastructure(dbPath, dataRoot);
 builder.Services.AddSingleton(sp =>
     TimeDatasetLoaders.CreateTimeScaleConverter(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), dataRoot));
+builder.Services.AddSingleton(sp =>
+    Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), dataRoot));
 builder.Services.AddCalendarsModule();
 builder.Services.AddTimeModule();
 builder.Services.AddEphemerisModule();
@@ -55,6 +57,7 @@ app.UseExceptionHandler(err => err.Run(async context =>
     {
         FeatureNotImplementedInPhaseException => StatusCodes.Status501NotImplemented,
         ReferenceEphemerisUnavailableException => StatusCodes.Status503ServiceUnavailable,
+        Astronomy.Modules.Stars.Application.StarCatalogUnavailableException => StatusCodes.Status503ServiceUnavailable,
         ArgumentException => StatusCodes.Status400BadRequest,
         _ => StatusCodes.Status500InternalServerError,
     };
@@ -62,6 +65,7 @@ app.UseExceptionHandler(err => err.Run(async context =>
     {
         FeatureNotImplementedInPhaseException n => $"AST-5010:{n.Feature}:{n.Phase}",
         ReferenceEphemerisUnavailableException => "AST-5030",
+        Astronomy.Modules.Stars.Application.StarCatalogUnavailableException => "AST-5031",
         ArgumentException => "AST-4001",
         _ => "AST-5000",
     };
@@ -224,6 +228,66 @@ app.MapGet("/api/v1/ephemeris/events", async (
     }
     var result = await service.GetEventsAsync(ParseTime(from), ParseTime(to), bodyList, typeList, ct);
     context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/stars/search", async (
+    double? ra, double? dec, double? radius, double? maxMagnitude, int? limit, string? time,
+    Astronomy.Modules.Stars.Application.IStarService service, CancellationToken ct, HttpContext context) =>
+{
+    if (ra is null || dec is null)
+        throw new ArgumentException("ra and dec are required (degrees, ICRS J2000)");
+    var request = new Astronomy.Modules.Stars.Application.ConeSearchRequest(
+        new Astronomy.SharedKernel.Units.Angle(ra.Value),
+        new Astronomy.SharedKernel.Units.Angle(dec.Value),
+        new Astronomy.SharedKernel.Units.Angle(radius ?? 10.0),
+        maxMagnitude ?? 6.5,
+        limit ?? 50,
+        time is null ? null : ParseTime(time));
+    var result = await service.ConeSearchAsync(request, ct);
+    context.Response.Headers.CacheControl = "public, max-age=900";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/stars/name", async (
+    string name, Astronomy.Modules.Stars.Application.IStarService service, CancellationToken ct, HttpContext context) =>
+{
+    var result = await service.SearchByNameAsync(name, ct);
+    context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/stars/brightest", async (
+    int? limit, double? maxMagnitude, string? constellation,
+    Astronomy.Modules.Stars.Application.IStarService service, CancellationToken ct, HttpContext context) =>
+{
+    var result = await service.GetBrightestAsync(limit ?? 10, maxMagnitude ?? 6.5, constellation, ct);
+    context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/stars/{hip}/position", async (
+    string hip, string? time, double? latitude, double? longitude, double? elevationMeters,
+    string? frame, string? positionType, string? refraction,
+    Astronomy.Modules.Stars.Application.IStarService service, CancellationToken ct, HttpContext context) =>
+{
+    var observer = latitude is null || longitude is null
+        ? Astronomy.SharedKernel.Coordinates.ObserverLocation.FromDegrees(0, 0, 0)
+        : ObserverLocationFrom(latitude, longitude, elevationMeters);
+    var result = await service.GetStarAsync(hip, ParseTime(time), ParseFrame(frame),
+        ParsePositionType(positionType), observer, ParseRefraction(refraction) == Astronomy.SharedKernel.Coordinates.RefractionModel.Simple, ct);
+    context.Response.Headers.CacheControl = "no-cache";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/stars/{hip}/rise-set", async (
+    string hip, string date, double? latitude, double? longitude, double? elevationMeters,
+    Astronomy.Modules.Stars.Application.IStarService service, CancellationToken ct, HttpContext context) =>
+{
+    var result = await service.GetRiseSetAsync(hip,
+        DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+        ObserverLocationFrom(latitude, longitude, elevationMeters), ct);
+    context.Response.Headers.CacheControl = "public, max-age=900";
     return Results.Ok(result);
 });
 

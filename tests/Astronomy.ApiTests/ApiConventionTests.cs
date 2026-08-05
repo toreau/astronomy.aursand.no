@@ -85,6 +85,43 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task StarSearch_WithoutCatalog_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/stars/search?ra=101.2&dec=-16.7&radius=5&maxMagnitude=6.5&limit=10");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5031", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task StarPosition_WithoutCatalog_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/stars/32349/position?time=2026-08-04T12:00:00Z&frame=icrs&positionType=astrometric&refraction=none");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5031", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task StarRiseSet_WithoutCatalog_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/stars/91262/rise-set?date=2026-08-04&latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5031", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task StarSearch_MissingRaDec_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/stars/search?radius=5");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task SunPosition_Geometric_Returns400()
     {
         var client = _factory.CreateClient();

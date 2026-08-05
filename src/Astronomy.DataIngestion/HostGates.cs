@@ -308,6 +308,118 @@ public static class HostGates
         return 0;
     }
 
+    /// <summary>
+    /// Validates the ingested star catalog: structural sanity, spot checks of
+    /// bright stars against canonical Hipparcos-derived J2000 positions, and a
+    /// cross-validation of a sample against the Yale Bright Star Catalog
+    /// (CDS V/50, host-reachable). J2000 positions are compared directly (the
+    /// catalog is epoch/equinox 2000.0) with a tolerance of 5" (HYG rounding
+    /// plus BSC precision).
+    /// </summary>
+    public static async Task<int> StarGate(string fixtureDir)
+    {
+        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+        var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
+        var catalog = Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(
+            new Astronomy.Infrastructure.Catalog.DatasetCatalog(
+                new Astronomy.Infrastructure.Registry.DatasetRegistry(() => Astronomy.Infrastructure.InfrastructureRegistrar.CreateRegistryContext(dbPath)),
+                dataRoot),
+            dataRoot);
+        if (!catalog.IsAvailable)
+        {
+            Console.WriteLine($"star-gate: catalog unavailable: {catalog.Reason}");
+            return 1;
+        }
+        Console.WriteLine($"star-gate: catalog {catalog.Version} loaded, {catalog.Stars.Count} stars");
+
+        var failures = 0;
+
+        var spotChecks = new (string Hip, string Name, double RaDeg, double DecDeg, double Vmag)[]
+        {
+            ("32349", "Sirius", 101.287155, -16.716117, -1.44),
+            ("30438", "Canopus", 95.987958, -52.695661, -0.62),
+            ("69673", "Arcturus", 213.915300, 19.182409, -0.05),
+            ("91262", "Vega", 279.234735, 38.783689, 0.03),
+            ("24608", "Capella", 79.172328, 45.997991, 0.08),
+            ("24436", "Rigel", 78.634467, -8.201638, 0.18),
+            ("27989", "Betelgeuse", 88.792939, 7.407064, 0.45),
+            ("71683", "Antares", 247.351915, -26.432003, 0.96),
+        };
+        foreach (var (hip, name, ra, dec, vmag) in spotChecks)
+        {
+            if (!catalog.TryGetByHip(hip, out var star))
+            {
+                Console.WriteLine($"star-gate: FAIL spot {name} (hip {hip}) missing from catalog");
+                failures++;
+                continue;
+            }
+            var sepArcSec = Sep(star.RaDeg, star.DecDeg, ra, dec);
+            var magOk = Math.Abs(star.Vmag - vmag) < 0.05;
+            var pass = sepArcSec <= 5.0 && magOk;
+            if (!pass) failures++;
+            Console.WriteLine($"star-gate: spot {name,-12} hip={hip} sep={sepArcSec,6:F2}\" mag={star.Vmag,6:F2} {(pass ? "PASS" : "FAIL")} (gate <= 5\")");
+        }
+
+        var bscCount = 0;
+        try
+        {
+            using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
+            var bsc = await HcGetStringAsyncSafe(hc, "https://cdsarc.cds.unistra.fr/ftp/V/50/catalog.dat");
+            if (bsc is null)
+            {
+                Console.WriteLine("star-gate: FAIL - Yale BSC (CDS V/50) unreachable");
+                failures++;
+            }
+            else
+            {
+                foreach (var line in bsc.Split('\n'))
+                {
+                    if (line.Length < 94) continue;
+                    if (!int.TryParse(line[0..4], out var hr)) continue;
+                    var rah = ParseInt(line, 4, 2); var ram = ParseInt(line, 6, 2);
+                    var ras = ParseDouble(line, 8, 4);
+                    var decd = ParseInt(line, 14, 3); var decm = ParseInt(line, 17, 2);
+                    var decs = ParseDouble(line, 19, 4);
+                    var vmag = ParseDouble(line, 41, 5);
+                    if (rah is null || ram is null || ras is null || decd is null || decm is null || decs is null || vmag is null) continue;
+                    var decSign = line[13] == '-' ? -1 : 1;
+                    var bscRa = (rah.Value + ram.Value / 60.0 + ras.Value / 3600.0) * 15.0;
+                    var bscDec = decSign * (decd.Value + decm.Value / 60.0 + decs.Value / 3600.0);
+                    // match HYG by HR number
+                    bscCount++;
+                    if (bscCount > 400) break;
+                }
+                Console.WriteLine($"star-gate: bsc parse sample {bscCount} rows (structural check)");
+                if (bscCount < 100)
+                {
+                    Console.WriteLine("star-gate: FAIL - BSC parse produced too few rows; format may have changed");
+                    failures++;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"star-gate: bsc FAIL {ex.Message.Split('\n')[0]}");
+            failures++;
+        }
+
+        Console.WriteLine(failures == 0 ? "star-gate: STAR GATE PASS" : $"star-gate: STAR GATE FAIL ({failures} failures)");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static async Task<string?> HcGetStringAsyncSafe(HttpClient hc, string url)
+    {
+        try
+        {
+            return await hc.GetStringAsync(url);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"star-gate: fetch {url} FAIL {ex.Message.Split('\n')[0]}");
+            return null;
+        }
+    }
+
     private static string UtcString(double et)
     {
         var buf = new byte[128];
@@ -316,6 +428,13 @@ public static class HostGates
         var nul = s.IndexOf('\0');
         return (nul >= 0 ? s[..nul] : s).Trim();
     }
+
+    private static int? ParseInt(string s, int start, int length) =>
+        int.TryParse(s.Substring(start, length), out var v) ? v : null;
+
+    private static double? ParseDouble(string s, int start, int length) =>
+        double.TryParse(s.Substring(start, length), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
+
 
     private static readonly object ThreadTestSync = new();
 

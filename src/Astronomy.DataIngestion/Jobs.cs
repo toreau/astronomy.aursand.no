@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using Astronomy.Infrastructure;
 using Astronomy.Infrastructure.Registry;
 using Astronomy.SharedKernel.Datasets;
@@ -136,6 +137,130 @@ public static class Jobs
         await registry.ActivateAsync("leap-seconds", version);
         Console.WriteLine($"leap-seconds: {table.Entries.Count} entries staged+activated as {version}");
         return 0;
+    }
+
+    public static async Task<int> RunStarCatalogJobAsync(string dbPath, string dataRoot)
+    {
+        const string sourceUrl = "https://raw.githubusercontent.com/astronexus/HYG-Database/main/hyg/v3/hyg_v38.csv.gz";
+        using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        byte[] gz;
+        try
+        {
+            gz = await hc.GetByteArrayAsync(sourceUrl);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"star-catalog: fetch FAIL {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
+        Console.WriteLine($"star-catalog: fetched hyg_v38.csv.gz {gz.Length} bytes");
+
+        var stars = new List<Astronomy.SharedKernel.Stars.StarRecord>(120_000);
+        using (var gzStream = new GZipStream(new MemoryStream(gz), CompressionMode.Decompress))
+        using (var reader = new StreamReader(gzStream))
+        {
+            reader.ReadLine(); // header
+            string? line;
+            var parsed = 0;
+            while ((line = reader.ReadLine()) is not null)
+            {
+                parsed++;
+                var star = ParseHygLine(line);
+                if (star is null) continue;
+                stars.Add(star.Value);
+            }
+            Console.WriteLine($"star-catalog: {parsed} raw lines, {stars.Count} kept");
+        }
+
+        if (stars.Count < 100_000)
+        {
+            Console.WriteLine($"star-catalog: REJECTED - only {stars.Count} stars parsed");
+            return 1;
+        }
+        if (!stars.Any(s => s.Hip == "32349" && Math.Abs(s.Vmag - -1.44) < 0.01))
+        {
+            Console.WriteLine("star-catalog: REJECTED - Sirius spot check failed (hip 32349, mag -1.44)");
+            return 1;
+        }
+        var magMin = stars.Min(s => s.Vmag);
+        var magMax = stars.Max(s => s.Vmag);
+        if (magMin < -30 || magMax > 30)
+        {
+            Console.WriteLine($"star-catalog: REJECTED - implausible magnitude range {magMin:F1}..{magMax:F1}");
+            return 1;
+        }
+
+        const string version = "v38";
+        var dir = Path.Combine(dataRoot, "datasets", "star-catalog-hyg", version);
+        Directory.CreateDirectory(dir);
+        var csv = new List<string>(stars.Count + 1)
+        {
+            "hip,proper,bayer_flamsteed,bayer,flam,con,ra_deg,dec_deg,pmra_mas_yr,pmdec_mas_yr,dist_ly,vmag,spect",
+        };
+        csv.AddRange(stars.Select(s => s.ToCsvLine()));
+        var csvText = string.Join('\n', csv);
+        await File.WriteAllTextAsync(Path.Combine(dir, "star-catalog-hyg.csv"), csvText);
+        var checksum = Sha256(csvText);
+
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        await registry.StageAsync("star-catalog-hyg", version, checksum);
+        await registry.ActivateAsync("star-catalog-hyg", version);
+        Console.WriteLine($"star-catalog: {stars.Count} stars staged+activated as {version} (mag range {magMin:F1}..{magMax:F1})");
+        return 0;
+    }
+
+    /// <summary>
+    /// Parse one HYG v3.8 CSV line (quoted fields handled) into a normalized
+    /// StarRecord. Columns: id,hip,hd,hr,gl,bf,proper,ra(h),dec(deg),dist(pc),
+    /// pmra,pmdec,rv,mag,absmag,spect,ci,x,y,z,vx,vy,vz,rarad,decrad,pmrarad,
+    /// pmdecrad,bayer,flam,con,comp,comp_primary,base,lum,var,var_min,var_max.
+    /// Sol (dist 0) and rows without usable coordinates are dropped.
+    /// </summary>
+    private static Astronomy.SharedKernel.Stars.StarRecord? ParseHygLine(string line)
+    {
+        var fields = SplitCsv(line);
+        if (fields.Length < 31) return null;
+        if (!double.TryParse(fields[7], NumberStyles.Float, CultureInfo.InvariantCulture, out var raHours)) return null;
+        if (!double.TryParse(fields[8], NumberStyles.Float, CultureInfo.InvariantCulture, out var dec)) return null;
+        if (!double.TryParse(fields[9], NumberStyles.Float, CultureInfo.InvariantCulture, out var distPc)) return null;
+        if (distPc <= 0) return null; // Sol
+        if (!double.TryParse(fields[10], NumberStyles.Float, CultureInfo.InvariantCulture, out var pmra)) pmra = 0;
+        if (!double.TryParse(fields[11], NumberStyles.Float, CultureInfo.InvariantCulture, out var pmdec)) pmdec = 0;
+        if (!double.TryParse(fields[13], NumberStyles.Float, CultureInfo.InvariantCulture, out var mag)) mag = 99;
+        var proper = fields[6];
+        var bf = fields[5];
+        var bayer = fields[27];
+        var flam = fields[28];
+        var con = fields[29];
+        return new Astronomy.SharedKernel.Stars.StarRecord(
+            fields[1].Trim(), proper, bf, bayer, flam, con,
+            raHours * 15.0, dec, pmra, pmdec, distPc * 3.262, mag, fields[15]);
+    }
+
+    /// <summary>Minimal RFC-4180-style CSV line splitter (quotes + embedded commas).</summary>
+    internal static string[] SplitCsv(string line)
+    {
+        var fields = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (inQuotes)
+            {
+                if (c == '"')
+                {
+                    if (i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
+                    else inQuotes = false;
+                }
+                else current.Append(c);
+            }
+            else if (c == '"') inQuotes = true;
+            else if (c == ',') { fields.Add(current.ToString()); current.Clear(); }
+            else current.Append(c);
+        }
+        fields.Add(current.ToString());
+        return fields.ToArray();
     }
 
     private static string Sha256(string s) =>
