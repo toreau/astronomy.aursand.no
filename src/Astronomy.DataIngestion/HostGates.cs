@@ -316,7 +316,7 @@ public static class HostGates
     public static async Task<int> NaifAsync(string kernelDir)
     {
         Directory.CreateDirectory(kernelDir);
-        using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         try
         {
             var r = await hc.GetAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/", HttpCompletionOption.ResponseHeadersRead);
