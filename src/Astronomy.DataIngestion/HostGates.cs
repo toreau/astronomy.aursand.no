@@ -7,6 +7,7 @@ using Astronomy.Infrastructure;
 using Astronomy.Infrastructure.Registry;
 using Astronomy.Modules.Ephemeris.Application;
 using Astronomy.Modules.Ephemeris.Reference;
+using Astronomy.Modules.Satellites.Application;
 
 namespace Astronomy.DataIngestion;
 
@@ -457,6 +458,88 @@ public static class HostGates
             Console.WriteLine($"star-gate: fetch {url} FAIL {ex.Message.Split('\n')[0]}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Satellite gate: element freshness of the active dataset, cross-propagator
+    /// agreement (One_Sgp4 vs SGP.NET over 24h), and pass self-consistency
+    /// (altitude at the computed rise/set ~= minElevation).
+    /// </summary>
+    public static int SatGate()
+    {
+        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var active = registry.ActiveVersion("satellite-elements");
+        if (active is null)
+        {
+            Console.WriteLine("sat-gate: satellite-elements dataset not ingested");
+            return 1;
+        }
+        var rows = SatelliteStore.ReadElements(dbPath, active.Version);
+        var iss = rows.FirstOrDefault(r => r.NoradId == "25544");
+        if (iss is null)
+        {
+            Console.WriteLine("sat-gate: ISS (25544) not in the active dataset");
+            return 1;
+        }
+        var ageHours = (DateTimeOffset.UtcNow - iss.EpochUtc).TotalHours;
+        Console.WriteLine($"sat-gate: dataset {active.Version} elements={rows.Count} ISS tle-age={ageHours:F1}h");
+        var failures = 0;
+        if (ageHours > 72)
+        {
+            Console.WriteLine($"sat-gate: FAIL - ISS TLE age {ageHours:F0}h exceeds 72h");
+            failures++;
+        }
+
+        // Cross-propagator: One_Sgp4 vs SGP.NET over 24h
+        var oneSgp4 = new OneSgp4Propagator();
+        var tle1 = OneSgp4Propagator.BuildLine1(iss);
+        var tle2 = OneSgp4Propagator.BuildLine2(iss);
+        var sgpNet = new SGPdotNET.Propagation.Sgp4(new SGPdotNET.TLE.Tle(tle1, tle2));
+        var t0 = DateTimeOffset.UtcNow;
+        var maxDev = 0.0;
+        for (var minutes = 0; minutes <= 1440; minutes += 60)
+        {
+            var t = t0.AddMinutes(minutes);
+            var v1 = oneSgp4.Propagate(iss, t);
+            var eci = sgpNet.FindPosition(minutes);
+            var v2 = eci.Position;
+            var dev = Math.Sqrt((v1.XKm - v2.X) * (v1.XKm - v2.X) + (v1.YKm - v2.Y) * (v1.YKm - v2.Y) + (v1.ZKm - v2.Z) * (v1.ZKm - v2.Z));
+            if (dev > maxDev) maxDev = dev;
+        }
+        var passDev = maxDev <= 5.0;
+        if (!passDev) failures++;
+        Console.WriteLine($"sat-gate: cross-propagator (One_Sgp4 vs SGP.NET) max deviation over 24h = {maxDev:F2} km {(passDev ? "PASS" : "FAIL")} (gate <= 5 km)");
+
+        // Pass self-consistency: ISS from Oslo, min elevation 10 deg
+        var observer = Astronomy.SharedKernel.Coordinates.ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var passes = SatellitePassPredictor.Predict(oneSgp4, iss, t0, t0.AddHours(24), observer, 0.0, 30.0, 10.0);
+        if (passes.Count == 0)
+        {
+            Console.WriteLine("sat-gate: FAIL - no ISS passes found over Oslo in the next 24h");
+            failures++;
+        }
+        else
+        {
+            var first = passes[0];
+            var riseAlt = AltOf(oneSgp4, iss, observer, first.RiseUtc);
+            var setAlt = AltOf(oneSgp4, iss, observer, first.SetUtc);
+            var passOk = Math.Abs(riseAlt - 10.0) < 0.5 && Math.Abs(setAlt - 10.0) < 0.5;
+            if (!passOk) failures++;
+            Console.WriteLine($"sat-gate: first pass {first.RiseUtc:HH:mm}..{first.SetUtc:HH:mm} maxElev={first.MaxElevationDeg:F1}° alt@rise={riseAlt:F2}° alt@set={setAlt:F2}° {(passOk ? "PASS" : "FAIL")} (expect ~10° at rise/set)");
+        }
+        Console.WriteLine(failures == 0 ? "sat-gate: SAT GATE PASS" : $"sat-gate: SAT GATE FAIL ({failures} failures)");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static double AltOf(IOrbitalPropagator prop, OrbitalElementRow elements, Astronomy.SharedKernel.Coordinates.ObserverLocation observer, DateTimeOffset t)
+    {
+        var teme = prop.Propagate(elements, t);
+        var gmst = SatelliteFrames.GmstDegrees(2451545.0 + (t - new DateTimeOffset(2000, 1, 1, 12, 0, 0, TimeSpan.Zero)).TotalDays);
+        var pef = SatelliteFrames.TemeToPef(teme, gmst);
+        var obs = SatelliteFrames.GeodeticToEcef(observer.Latitude.Degrees, observer.Longitude.Degrees, observer.ElevationMeters / 1000.0);
+        var (alt, _, _) = SatelliteFrames.Topocentric(pef.X, pef.Y, pef.Z, obs.X, obs.Y, obs.Z, observer.Latitude.Degrees, observer.Longitude.Degrees, false);
+        return alt;
     }
 
     private static string UtcString(double et)

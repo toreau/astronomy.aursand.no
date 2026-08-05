@@ -80,6 +80,13 @@ internal static class SatelliteStore
         return rows.Select(FromJson).ToList();
     }
 
+    public static IReadOnlyList<OrbitalElementRow> ReadElements(string dbPath, string datasetVersion)
+    {
+        using var ctx = CreateContext(dbPath);
+        var rows = ctx.Elements.AsNoTracking().Where(e => e.DatasetVersion == datasetVersion).ToList();
+        return rows.Select(FromJson).ToList();
+    }
+
     public static (int Fresh, int Warn, int Degraded, int Refuse) Freshness(IReadOnlyList<OrbitalElementRow> rows, DateTimeOffset now)
     {
         var fresh = 0; var warn = 0; var degraded = 0; var refuse = 0;

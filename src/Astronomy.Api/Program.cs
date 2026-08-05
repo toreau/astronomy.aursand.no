@@ -65,6 +65,7 @@ app.UseExceptionHandler(err => err.Run(async context =>
         FeatureNotImplementedInPhaseException => StatusCodes.Status501NotImplemented,
         ReferenceEphemerisUnavailableException => StatusCodes.Status503ServiceUnavailable,
         Astronomy.Modules.Stars.Application.StarCatalogUnavailableException => StatusCodes.Status503ServiceUnavailable,
+        Astronomy.Modules.Satellites.Application.SatelliteElementsUnavailableException => StatusCodes.Status503ServiceUnavailable,
         ArgumentException => StatusCodes.Status400BadRequest,
         _ => StatusCodes.Status500InternalServerError,
     };
@@ -73,6 +74,7 @@ app.UseExceptionHandler(err => err.Run(async context =>
         FeatureNotImplementedInPhaseException n => $"AST-5010:{n.Feature}:{n.Phase}",
         ReferenceEphemerisUnavailableException => "AST-5030",
         Astronomy.Modules.Stars.Application.StarCatalogUnavailableException => "AST-5031",
+        Astronomy.Modules.Satellites.Application.SatelliteElementsUnavailableException => "AST-5032",
         ArgumentException => "AST-4001",
         _ => "AST-5000",
     };
@@ -295,6 +297,58 @@ app.MapGet("/api/v1/stars/{hip}/rise-set", async (
         DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
         ObserverLocationFrom(latitude, longitude, elevationMeters), ct);
     context.Response.Headers.CacheControl = "public, max-age=900";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/satellites/{norad}/position", async (
+    string norad, string? time, double? latitude, double? longitude, double? elevationMeters, string? refraction,
+    Astronomy.Modules.Satellites.Application.ISatelliteService service, CancellationToken ct, HttpContext context) =>
+{
+    var observer = ObserverLocationFrom(latitude, longitude, elevationMeters);
+    var result = await service.GetPositionAsync(norad, ParseTime(time), observer,
+        ParseRefraction(refraction) == Astronomy.SharedKernel.Coordinates.RefractionModel.Simple, ct);
+    context.Response.Headers.CacheControl = "no-cache";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/satellites/{norad}/passes", async (
+    string norad, string? date, string? from, string? to,
+    double? latitude, double? longitude, double? elevationMeters,
+    double? minElevation, double? stepSeconds,
+    Astronomy.Modules.Satellites.Application.ISatelliteService service, CancellationToken ct, HttpContext context) =>
+{
+    var observer = ObserverLocationFrom(latitude, longitude, elevationMeters);
+    DateTimeOffset fromUtc, toUtc;
+    if (date is not null)
+    {
+        var day = DateOnly.ParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        fromUtc = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        toUtc = fromUtc.AddDays(1);
+    }
+    else
+    {
+        fromUtc = ParseTime(from);
+        toUtc = ParseTime(to);
+    }
+    var result = await service.GetPassesAsync(norad, fromUtc, toUtc, observer,
+        minElevation ?? 10.0, stepSeconds ?? 30.0, ct);
+    context.Response.Headers.CacheControl = "public, max-age=300";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/satellites/search", async (
+    string name, Astronomy.Modules.Satellites.Application.ISatelliteService service, CancellationToken ct, HttpContext context) =>
+{
+    var result = await service.SearchAsync(name, ct);
+    context.Response.Headers.CacheControl = "public, max-age=300";
+    return Results.Ok(result);
+});
+
+app.MapGet("/api/v1/satellites/status", async (
+    Astronomy.Modules.Satellites.Application.ISatelliteService service, CancellationToken ct, HttpContext context) =>
+{
+    var result = await service.GetStatusAsync(ct);
+    context.Response.Headers.CacheControl = "public, max-age=60";
     return Results.Ok(result);
 });
 

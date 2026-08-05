@@ -144,6 +144,35 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task SatellitePosition_WithoutElements_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/satellites/25544/position?time=2026-08-05T12:00:00Z&latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5032", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SatellitePasses_WithoutElements_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/satellites/25544/passes?date=2026-08-05&latitude=59.9&longitude=10.7&minElevation=10");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5032", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SatellitePosition_MissingObserver_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/satellites/25544/position?time=2026-08-05T12:00:00Z");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task SunPosition_Geometric_Returns400()
     {
         var client = _factory.CreateClient();

@@ -50,6 +50,9 @@ switch (mode)
     case "star-gate":
         return await HostGates.StarGate(args.Length > 1 ? args[1] : "/data/fixtures");
 
+    case "sat-gate":
+        return HostGates.SatGate();
+
     case "omm":
         await OmmCommandAsync(args[1..]);
         break;
