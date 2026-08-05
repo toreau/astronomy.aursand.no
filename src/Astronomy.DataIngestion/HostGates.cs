@@ -189,6 +189,7 @@ public static class HostGates
             var seps = new List<double>();
             var sepsAberr = new List<double>();
             var n = 0;
+            var skipThisBody = 0;
             foreach (var line in File.ReadAllLines(path))
             {
                 var p = line.Split(',');
@@ -197,6 +198,7 @@ public static class HostGates
                 if (utc.UtcDateTime < new DateTime(1972, 1, 1, 0, 0, 0, DateTimeKind.Utc))
                 {
                     skippedPre1972++;
+                    skipThisBody++;
                     continue;
                 }
                 var astro = reference.Position(body, utc, apparent: false);
@@ -211,8 +213,9 @@ public static class HostGates
             var maxAberr = sepsAberr.Max();
             var pass = max <= 1.0;
             if (!pass) failures++;
+            var fileLines = File.ReadAllLines(path).ToList();
             var worst = seps.Select((s, i) => (S: s, I: i)).OrderByDescending(x => x.S).Take(3)
-                .Select(x => $"{File.ReadLines(path).Skip(x.I).First().Split(',')[0]}={x.S:F2}\"");
+                .Select(x => $"{fileLines[skipThisBody + x.I].Split(',')[0]}={x.S:F2}\"");
             Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" {(pass ? "PASS" : "FAIL")} (gate <= 1\") | apparent-vs-astrometric max={maxAberr,7:F1}\" (aberration sanity, not gated) | worst: {string.Join(" ", worst)}");
         }
         Console.WriteLine($"compare-spice: (skipped {skippedPre1972} pre-1972 rows - reference tier validated for the leap-second era)");

@@ -46,10 +46,22 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
 
         var abcorr = apparent ? "LT+S" : "LT";
         var et = _pool.Et(utc);
-        var (xyz, _) = _pool.SpkPos(SpiceName(body, _pool.HasKernel("de440s_plus_MarsPC.bsp")), et, abcorr);
+        var target = SpiceName(body, MarsCenterAvailable(utcUtc));
+        var (xyz, _) = _pool.SpkPos(target, et, abcorr);
         var (rangeKm, raDeg, decDeg) = _pool.RecRad(xyz);
         return new ReferencePosition(raDeg, decDeg, rangeKm, abcorr);
     }
+
+    /// <summary>
+    /// de440s_plus_MarsPC.bsp (JPL) provides the Mars planet-center segment for
+    /// 1950-01-01..2050-01-01; outside that window the de440/de441 Mars
+    /// barycenter is used (center-vs-barycenter offset <= 0.05").
+    /// </summary>
+    private static readonly DateTime MarsPcStart = new(1950, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime MarsPcEnd = new(2050, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    private bool MarsCenterAvailable(DateTime utc) =>
+        _pool.HasKernel("de440s_plus_MarsPC.bsp") && utc >= MarsPcStart && utc < MarsPcEnd;
 
     /// <summary>
     /// The DE-series SPKs (de441/de440/de440s) provide planet CENTER segments for
