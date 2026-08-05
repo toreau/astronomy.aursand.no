@@ -58,6 +58,12 @@ internal static partial class CSpice
     [LibraryImport(Lib, EntryPoint = "deltet_c")]
     public static partial void Deltet(double epoch, [MarshalAs(UnmanagedType.LPUTF8Str)] string eptype, out double delta);
 
+    [LibraryImport(Lib, EntryPoint = "spkobj_c")]
+    public static partial void SpkObj([MarshalAs(UnmanagedType.LPUTF8Str)] string spk, [In, Out] int[] ids, out int count);
+
+    [LibraryImport(Lib, EntryPoint = "spkcov_c")]
+    public static partial void SpkCov([MarshalAs(UnmanagedType.LPUTF8Str)] string spk, int idcode, out int nseg, [In, Out] double[] cover);
+
     [LibraryImport(Lib, EntryPoint = "et2utc_c")]
     public static partial void Et2Utc(
         double et, [MarshalAs(UnmanagedType.LPUTF8Str)] string format, int prec, int lenout,

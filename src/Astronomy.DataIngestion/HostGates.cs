@@ -236,6 +236,38 @@ public static class HostGates
         return 0;
     }
 
+    public static int SpiceCov(string kernelDir, string fileName)
+    {
+        var path = Path.Combine(kernelDir, fileName);
+        if (!File.Exists(path)) { Console.WriteLine($"spice-cov: no such file {path}"); return 1; }
+        var ids = new int[10000];
+        CSpice.SpkObj(path, ids, out var count);
+        Console.WriteLine($"spice-cov: {fileName} objects={count}");
+        var cover = new double[20000];
+        for (var i = 0; i < count; i++)
+        {
+            CSpice.SpkCov(path, ids[i], out var nseg, cover);
+            var intervals = new List<string>();
+            for (var s = 0; s < nseg; s++)
+            {
+                var start = UtcString(cover[s * 2]);
+                var end = UtcString(cover[s * 2 + 1]);
+                intervals.Add($"{start}..{end}");
+            }
+            Console.WriteLine($"spice-cov:   id={ids[i],5} nseg={nseg} {string.Join(" ", intervals)}");
+        }
+        return 0;
+    }
+
+    private static string UtcString(double et)
+    {
+        var buf = new byte[128];
+        CSpice.Et2Utc(et, "ISOC", 0, buf.Length, buf);
+        var s = System.Text.Encoding.UTF8.GetString(buf);
+        var nul = s.IndexOf('\0');
+        return (nul >= 0 ? s[..nul] : s).Trim();
+    }
+
     private static readonly object ThreadTestSync = new();
 
     public static int SpiceThreadTest(string kernelDir)

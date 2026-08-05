@@ -42,6 +42,10 @@ switch (mode)
         return HostGates.SpiceProbe(args.Length > 1 ? args[1] : "/data/kernels",
             args.Length > 2 ? args[2] : "mars", args.Length > 3 ? args[3] : "2026-08-04T12:00:00Z");
 
+    case "spice-cov":
+        return HostGates.SpiceCov(args.Length > 1 ? args[1] : "/data/kernels",
+            args.Length > 2 ? args[2] : "de441_part-1.bsp");
+
     case "omm":
         await OmmCommandAsync(args[1..]);
         break;
