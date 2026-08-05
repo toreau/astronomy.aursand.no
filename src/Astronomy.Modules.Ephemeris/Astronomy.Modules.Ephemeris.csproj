@@ -13,10 +13,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Astronomy.UnitTests" />
     <InternalsVisibleTo Include="Astronomy.AccuracyTests" />
+    <InternalsVisibleTo Include="Astronomy.DataIngestion" />
   </ItemGroup>
 </Project>

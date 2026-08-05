@@ -30,6 +30,14 @@ switch (mode)
         await IngestCommandAsync(args[1..]);
         break;
 
+    case "compare-spice":
+        return HostGates.CompareSpiceFixtures(
+            args.Length > 1 ? args[1] : "/data/fixtures",
+            args.Length > 2 ? args[2] : "/data/kernels");
+
+    case "spice-threadtest":
+        return HostGates.SpiceThreadTest(args.Length > 1 ? args[1] : "/data/kernels");
+
     case "omm":
         await OmmCommandAsync(args[1..]);
         break;
@@ -55,7 +63,7 @@ switch (mode)
         break;
 
     default:
-        Console.WriteLine("usage: Astronomy.DataIngestion <heartbeat|migrate|backup|dataset|ingest|omm|probe|fixtures|compare|sample|naif>");
+        Console.WriteLine("usage: Astronomy.DataIngestion <heartbeat|migrate|backup|dataset|ingest|omm|probe|fixtures|compare|sample|naif|compare-spice|spice-threadtest>");
         return 1;
 }
 return 0;
@@ -69,7 +77,7 @@ async Task<int> DatasetCommandAsync(string[] args)
     switch (args[0])
     {
         case "status":
-            foreach (var name in new[] { "leap-seconds", "eop-ut1", "satellite-elements" })
+            foreach (var name in new[] { "leap-seconds", "eop-ut1", "eop-c04", "satellite-elements" })
             {
                 var active = registry.ActiveVersion(name);
                 Console.WriteLine($"dataset: {name,-18} active={active?.Version ?? "(none)"}");
@@ -91,10 +99,11 @@ async Task<int> DatasetCommandAsync(string[] args)
 
 async Task<int> IngestCommandAsync(string[] args)
 {
-    if (args.Length < 1) { Console.WriteLine("usage: ingest <eop|leap-seconds>"); return 1; }
+    if (args.Length < 1) { Console.WriteLine("usage: ingest <eop|eop-c04|leap-seconds>"); return 1; }
     return args[0] switch
     {
         "eop" => await Jobs.RunEopJobAsync(dbPath, dataRoot),
+        "eop-c04" => await Jobs.RunEopC04JobAsync(dbPath, dataRoot),
         "leap-seconds" => await Jobs.RunLeapSecondsJobAsync(dbPath, dataRoot),
         _ => 1,
     };

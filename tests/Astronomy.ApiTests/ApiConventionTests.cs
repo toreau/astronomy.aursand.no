@@ -65,12 +65,23 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task SunPosition_AdvancedPrecision_ReturnsWarning()
+    public async Task SunPosition_AdvancedPrecision_OfDate_Returns400()
     {
         var client = _factory.CreateClient();
-        var body = await client.GetStringAsync(
+        var response = await client.GetAsync(
             "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=of-date&positionType=apparent&refraction=none&precision=advanced");
-        Assert.Contains("AST-7002", body);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task SunPosition_ReferencePrecision_WithoutKernels_Returns503()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=icrs&positionType=astrometric&refraction=none&precision=reference");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("AST-5030", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]

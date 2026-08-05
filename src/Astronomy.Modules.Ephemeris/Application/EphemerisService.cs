@@ -2,19 +2,23 @@ using Astronomy.SharedKernel;
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
 using Astronomy.SharedKernel.Time;
+using Astronomy.Modules.Ephemeris.Reference;
 
 namespace Astronomy.Modules.Ephemeris.Application;
 
 internal sealed class EphemerisService : IEphemerisService
 {
     private const string EngineRef = "astronomy-engine";
+    private const string SpiceRef = "spice-de440s";
 
     private readonly EphemerisCalculator _calculator = new();
     private readonly IDatasetCatalog _catalog;
+    private readonly IReferenceEphemeris? _reference;
 
-    public EphemerisService(IDatasetCatalog catalog)
+    public EphemerisService(IDatasetCatalog catalog, IReferenceEphemeris? reference = null)
     {
         _catalog = catalog;
+        _reference = reference;
     }
 
     public Task<EphemerisPositionResult> GetPositionAsync(PositionRequest request, CancellationToken ct)
@@ -23,22 +27,62 @@ internal sealed class EphemerisService : IEphemerisService
             throw new ArgumentException($"unknown body '{request.Body}'");
         if (request.PositionType == PositionType.Geometric)
             throw new ArgumentException("positionType 'geometric' is not supported: the engine exposes no pure-geometric path (its no-aberration path equals astrometric within arcseconds); use 'astrometric' or 'apparent'");
+        var isReference = request.Precision != PrecisionMode.Consumer;
         if (request.Frame == CoordinateFrame.Horizontal)
         {
+            if (isReference) EnsureReferenceReady();
             var (alt, az) = _calculator.Horizontal(body, request.Time, request.Observer,
                 request.Refraction == RefractionModel.Simple);
+            var metadata = Metadata(request.Precision, "horizontal");
+            if (isReference)
+                metadata = metadata.WithWarning(new CalculationWarning("AST-7003",
+                    "reference tier computes J2000 positions; horizontal uses the consumer-tier chain"));
             return Task.FromResult(new EphemerisPositionResult(
-                body.Name, 0, 0, alt, az, 0,
-                Metadata(request.Precision, "horizontal")));
+                body.Name, 0, 0, alt, az, 0, metadata));
         }
+        if (isReference)
+        {
+            if (request.Frame == CoordinateFrame.EquatorialOfDate)
+                throw new ArgumentException("precision=advanced|reference computes J2000 positions only (SPICE de440s); use precision=consumer for of-date frames");
+            EnsureReferenceReady();
+            var referencePosition = _reference!.Position(body, request.Time,
+                request.PositionType == PositionType.Apparent);
+            return Task.FromResult(new EphemerisPositionResult(
+                body.Name, referencePosition.RaDeg, referencePosition.DecDeg, null, null,
+                referencePosition.DistanceKm, ReferenceMetadata(request)));
+        }
+
         if (request.Frame == CoordinateFrame.IcrJ2000 && request.PositionType != PositionType.Astrometric ||
             request.Frame == CoordinateFrame.EquatorialOfDate && request.PositionType != PositionType.Apparent)
-            throw new ArgumentException($"unsupported frame/positionType combination {request.Frame}/{request.PositionType} (supported: ICRS-J2000+astrometric, of-date+apparent, horizontal)");
+            throw new ArgumentException($"unsupported frame/positionType combination {request.Frame}/{request.PositionType} (supported: ICRS-J2000+astrometric, of-date+apparent, horizontal; at precision=advanced|reference, ICRS-J2000 astrometric/apparent)");
 
         var eq = _calculator.GeocentricEquatorial(body, request.Time, apparent: request.PositionType == PositionType.Apparent);
         return Task.FromResult(new EphemerisPositionResult(
             body.Name, eq.RaDeg, eq.DecDeg, null, null, eq.DistanceKm,
             Metadata(request.Precision, request.Frame == CoordinateFrame.IcrJ2000 ? "j2000-astrometric" : "of-date-apparent")));
+    }
+
+    private void EnsureReferenceReady()
+    {
+        if (_reference is null || !_reference.IsAvailable)
+            throw new ReferenceEphemerisUnavailableException(
+                _reference?.UnavailableReason ?? "reference ephemeris not registered");
+    }
+
+    private CalculationMetadata ReferenceMetadata(PositionRequest request)
+    {
+        var variant = request.Frame == CoordinateFrame.IcrJ2000
+            ? request.PositionType == PositionType.Apparent ? "j2000-apparent" : "j2000-astrometric"
+            : "j2000";
+        var datasets = new List<DatasetRef>
+        {
+            new("leap-seconds", _catalog.ActiveVersion("leap-seconds")?.Version ?? "none"),
+            new("eop-ut1", _catalog.ActiveVersion("eop-ut1")?.Version ?? "none"),
+        };
+        foreach (var (kernel, version) in _reference!.KernelVersions)
+            datasets.Add(new DatasetRef($"spice:{kernel}", version));
+        return new CalculationMetadata(datasets,
+            [new AlgorithmRef(SpiceRef, "N66:" + variant)], []);
     }
 
     public Task<RiseSetTransitResult> GetRiseSetAsync(BodyId body, DateOnly date, ObserverLocation observer, PrecisionMode precision, CancellationToken ct) =>
@@ -87,7 +131,7 @@ internal sealed class EphemerisService : IEphemerisService
         var warnings = new List<CalculationWarning>();
         if (precision != PrecisionMode.Consumer)
             warnings.Add(new CalculationWarning("AST-7002",
-                "advanced/reference tier not implemented until Phase 4; consumer-tier accuracy applies"));
+                "advanced/reference tier is implemented for position endpoints only (SPICE de440s); this endpoint uses the consumer-tier chain"));
         return new CalculationMetadata(
             [new DatasetRef("leap-seconds", _catalog.ActiveVersion("leap-seconds")?.Version ?? "none"),
              new DatasetRef("eop-ut1", _catalog.ActiveVersion("eop-ut1")?.Version ?? "none")],

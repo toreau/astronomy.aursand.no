@@ -1,6 +1,8 @@
 using System.Globalization;
 using CosineKitty;
 using System.Security.Cryptography;
+using Astronomy.Modules.Ephemeris.Application;
+using Astronomy.Modules.Ephemeris.Reference;
 
 namespace Astronomy.DataIngestion;
 
@@ -166,6 +168,125 @@ public static class HostGates
         return Math.Acos(Math.Clamp(cosSep, -1, 1)) * 180 / Math.PI * 3600;
     }
 
+    public static int CompareSpiceFixtures(string fixtureDir, string kernelDir)
+    {
+        var reference = new SpiceReferenceEphemeris(kernelDir);
+        if (!reference.IsAvailable)
+        {
+            Console.WriteLine($"compare-spice: kernels unavailable: {reference.UnavailableReason}");
+            return 1;
+        }
+        Console.WriteLine("compare-spice: kernels: " + string.Join(", ",
+            reference.KernelVersions.Select(kv => $"{kv.Key} sha256:{kv.Value}")));
+        var failures = 0;
+        foreach (var (name, _) in Bodies)
+        {
+            var path = Path.Combine(fixtureDir, $"horizons_{name}.csv");
+            if (!File.Exists(path)) { Console.WriteLine($"compare-spice: {name} - no fixture"); continue; }
+            var body = BodyId.AllBodies.First(b => b.Name == name);
+            var seps = new List<double>();
+            var sepsAberr = new List<double>();
+            var n = 0;
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var p = line.Split(',');
+                if (p.Length < 5) continue;
+                var utc = DateTimeOffset.Parse(p[0], null, DateTimeStyles.RoundtripKind);
+                var astro = reference.Position(body, utc, apparent: false);
+                seps.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), astro.RaDeg, astro.DecDeg));
+                if (n == 0)
+                    Console.WriteLine($"compare-spice: {name} first row utc={utc:O} hz_ra={p[1]} hz_dec={p[2]} spice_ra={astro.RaDeg:F6} spice_dec={astro.DecDeg:F6} r={astro.DistanceKm:F1} km abcorr={astro.AberrationCorrection}");
+                var apparent = reference.Position(body, utc, apparent: true);
+                sepsAberr.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), apparent.RaDeg, apparent.DecDeg));
+                n++;
+            }
+            var max = seps.Max();
+            var maxAberr = sepsAberr.Max();
+            var pass = max <= 1.0;
+            if (!pass) failures++;
+            Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" {(pass ? "PASS" : "FAIL")} (gate <= 1\") | apparent-vs-astrometric max={maxAberr,7:F1}\" (aberration sanity, not gated)");
+        }
+        Console.WriteLine(failures == 0 ? "compare-spice: REFERENCE GATE PASS" : $"compare-spice: REFERENCE GATE FAIL ({failures} bodies over 1\")");
+        return failures == 0 ? 0 : 1;
+    }
+
+    private static readonly object ThreadTestSync = new();
+
+    public static int SpiceThreadTest(string kernelDir)
+    {
+        foreach (var file in new[] { "de440s.bsp", "naif0012.tls", "pck00010.tpc" })
+        {
+            var path = Path.Combine(kernelDir, file);
+            if (!File.Exists(path)) { Console.WriteLine($"spice-threadtest: kernel missing {path}"); return 1; }
+            CSpice.Furnsh(path);
+            if (CSpice.Failed() != 0)
+            {
+                Console.WriteLine($"spice-threadtest: furnsh failed for {file}");
+                return 1;
+            }
+        }
+        Console.WriteLine("spice-threadtest: kernels furnished (raw, no lock)");
+
+        var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
+        double SumAt(int i)
+        {
+            CSpice.Utc2Et(t0.AddMinutes(i).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + " UTC", out var et);
+            var pos = new double[3];
+            CSpice.SpkPos("MOON", et, "J2000", "NONE", "EARTH", pos, out _);
+            if (CSpice.Failed() != 0) throw new InvalidOperationException("spice error state");
+            return pos[0] + pos[1] + pos[2];
+        }
+
+        var baseline = new double[200];
+        for (var i = 0; i < baseline.Length; i++) baseline[i] = SumAt(i);
+        Console.WriteLine("spice-threadtest: baseline computed (200 epochs, single-threaded)");
+
+        int RunParallel(bool useLock)
+        {
+            var corruptions = 0;
+            Parallel.For(0, 8, _ =>
+            {
+                for (var i = 0; i < 200; i++)
+                {
+                    double value;
+                    try
+                    {
+                        if (useLock)
+                        {
+                            lock (ThreadTestSync) value = SumAt(i);
+                        }
+                        else
+                        {
+                            value = SumAt(i);
+                        }
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        Interlocked.Increment(ref corruptions);
+                        return;
+                    }
+                    if (Math.Abs(value - baseline[i]) > 1e-9)
+                        Interlocked.Increment(ref corruptions);
+                }
+            });
+            return corruptions;
+        }
+
+        var unlocked = RunParallel(useLock: false);
+        Console.WriteLine($"spice-threadtest: 8 threads x 200 spkpos WITHOUT lock -> {unlocked} corrupted results");
+        var locked = RunParallel(useLock: true);
+        Console.WriteLine($"spice-threadtest: 8 threads x 200 spkpos WITH lock    -> {locked} corrupted results");
+        if (locked != 0)
+        {
+            Console.WriteLine("spice-threadtest: lock did not prevent corruption - INVESTIGATE");
+            return 1;
+        }
+        Console.WriteLine(unlocked == 0
+            ? "spice-threadtest: no corruption observed without lock this run; global lock retained defensively (S0.3 observed CHKOUT corruption)"
+            : $"spice-threadtest: corruption confirmed without lock ({unlocked}); global lock REQUIRED (confirms S0.3)");
+        return 0;
+    }
+
     public static async Task<int> NaifAsync(string kernelDir)
     {
         Directory.CreateDirectory(kernelDir);
@@ -189,8 +310,33 @@ public static class HostGates
         var data = await hc.GetByteArrayAsync(mirrors[0]);
         var sha = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
         Console.WriteLine($"naif: de440s.bsp {data.Length} bytes sha256={sha}");
-        Console.WriteLine($"naif: expected (dual-mirror, S0.3) = c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2 match={sha == "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2"}");
+        Console.WriteLine($"naif: expected (dual-mirror, S0.3) = c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2 match={sha == "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2"} (NOTE: de440s.bsp carries barycenter-only segments for the outer planets; the reference tier requires de440.bsp)");
         await File.WriteAllBytesAsync(kernelPath, data);
+
+        try
+        {
+            var listing = await hc.GetStringAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/");
+            var sizes = System.Text.RegularExpressions.Regex.Matches(listing, @"href=""([^""]*de44[01][a-z]*\.bsp)""[^<]*<[^>]*>([\d,]+)")
+                .Select(m => $"{m.Groups[1].Value}={m.Groups[2].Value}")
+                .ToList();
+            Console.WriteLine($"naif: official de440 listing sizes: {string.Join(", ", sizes)}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: official de440 listing FAIL {ex.Message.Split('\n')[0]}");
+        }
+
+        try
+        {
+            var official = await hc.GetByteArrayAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp");
+            var sha440 = Convert.ToHexString(SHA256.HashData(official)).ToLowerInvariant();
+            await File.WriteAllBytesAsync(Path.Combine(kernelDir, "de440.bsp"), official);
+            Console.WriteLine($"naif: de440.bsp {official.Length} bytes sha256={sha440} (full planetary kernel, planet-center segments)");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: de440.bsp FAIL {ex.Message.Split('\n')[0]} (reference tier for outer planets requires it)");
+        }
 
         try
         {

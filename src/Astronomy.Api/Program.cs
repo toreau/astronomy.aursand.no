@@ -4,6 +4,7 @@ using Astronomy.Infrastructure.Time;
 using Astronomy.Modules.Almanac.Application;
 using Astronomy.Modules.Calendars.Application;
 using Astronomy.Modules.Ephemeris.Application;
+using Astronomy.Modules.Ephemeris.Reference;
 using Astronomy.Modules.Satellites.Application;
 using Astronomy.Modules.Stars.Application;
 using Astronomy.Modules.Time.Application;
@@ -53,12 +54,14 @@ app.UseExceptionHandler(err => err.Run(async context =>
     var status = ex switch
     {
         FeatureNotImplementedInPhaseException => StatusCodes.Status501NotImplemented,
+        ReferenceEphemerisUnavailableException => StatusCodes.Status503ServiceUnavailable,
         ArgumentException => StatusCodes.Status400BadRequest,
         _ => StatusCodes.Status500InternalServerError,
     };
     var code = ex switch
     {
         FeatureNotImplementedInPhaseException n => $"AST-5010:{n.Feature}:{n.Phase}",
+        ReferenceEphemerisUnavailableException => "AST-5030",
         ArgumentException => "AST-4001",
         _ => "AST-5000",
     };
@@ -81,7 +84,7 @@ app.MapGet("/", () => Results.Text("Astronomy API"));
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 
-app.MapGet("/ready", () =>
+app.MapGet("/ready", (Astronomy.Modules.Ephemeris.Reference.IReferenceEphemeris reference) =>
 {
     try
     {
@@ -90,7 +93,12 @@ app.MapGet("/ready", () =>
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT 1";
         cmd.ExecuteScalar();
-        return Results.Ok(new { status = "ready", db = "ok" });
+        return Results.Ok(new
+        {
+            status = "ready",
+            db = "ok",
+            kernels = reference.IsAvailable ? "ok" : "unavailable",
+        });
     }
     catch (Exception ex)
     {
