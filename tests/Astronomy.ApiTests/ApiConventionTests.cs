@@ -54,14 +54,32 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
-    public async Task UnimplementedFeature_Returns501()
+    public async Task SunPosition_Real_Returns200_WithSaneValues()
     {
         var client = _factory.CreateClient();
-        var response = await client.GetAsync("/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7");
-        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("AST-5010", body);
-        Assert.Contains("Phase 2", body);
+        var result = await client.GetFromJsonAsync<SunPositionResponse>(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=of-date&positionType=apparent&refraction=none&precision=consumer");
+        Assert.NotNull(result);
+        Assert.InRange(result!.RightAscensionDeg, 130, 140);
+        Assert.InRange(result.DeclinationDeg, 10, 20);
+    }
+
+    [Fact]
+    public async Task SunPosition_AdvancedPrecision_ReturnsWarning()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=of-date&positionType=apparent&refraction=none&precision=advanced");
+        Assert.Contains("AST-7002", body);
+    }
+
+    [Fact]
+    public async Task SunPosition_Geometric_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=icrs&positionType=geometric&refraction=none");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -91,6 +109,8 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("astronomy", body.ToLowerInvariant());
     }
+
+    public sealed record SunPositionResponse(string Body, double RightAscensionDeg, double DeclinationDeg, double? AltitudeDeg, double? AzimuthDeg, double DistanceKm);
 
     public sealed record JulianDateResponse(double JulianDate, double ModifiedJulianDate, string Utc);
     public sealed record TimeScalesResponse(
