@@ -209,7 +209,7 @@ internal sealed class StarService : IStarService
         var haNow = (lst0 - raOfDate + 360) % 360; // degrees, 0..360
 
         var degPerDay = 360.985647366;
-        var transitOffsetDays = haNow / degPerDay; // hours from t0 to transit in day-fractions
+        var transitOffsetDays = ((360.0 - haNow) % 360.0) / degPerDay; // time until HA wraps to 0
         var transit = t0.ToUtcDateTime().AddDays(transitOffsetDays);
         var rise = transit.AddDays(-haRad * 180 / Math.PI / degPerDay);
         var set = transit.AddDays(haRad * 180 / Math.PI / degPerDay);
