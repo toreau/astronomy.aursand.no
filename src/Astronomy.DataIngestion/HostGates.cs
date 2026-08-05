@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using CosineKitty;
 using System.Security.Cryptography;
+using Astronomy.Infrastructure;
+using Astronomy.Infrastructure.Registry;
 using Astronomy.Modules.Ephemeris.Application;
 using Astronomy.Modules.Ephemeris.Reference;
 
@@ -710,8 +712,23 @@ public static class HostGates
         var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
         Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
-        if (gateExit == 0 && c04Exit == 0)
+        // Star catalog - ingest once if not active yet (the HYG catalog is static;
+        // the weekly job only fills the gap if the dataset is missing).
+        var starExit = 0;
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        if (registry.ActiveVersion("star-catalog-hyg") is null)
+        {
+            Console.WriteLine("naif: star catalog not active - ingesting...");
+            starExit = await Jobs.RunStarCatalogJobAsync(dbPath, dataRoot);
+            Console.WriteLine(starExit == 0 ? "naif: star-catalog ingest OK" : "naif: star-catalog ingest FAIL");
+        }
+        else
+        {
+            Console.WriteLine("naif: star catalog already active, skipping");
+        }
+
+        if (gateExit == 0 && c04Exit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        return gateExit == 0 && c04Exit == 0 ? 0 : 1;
+        return gateExit == 0 && c04Exit == 0 && starExit == 0 ? 0 : 1;
     }
 }
