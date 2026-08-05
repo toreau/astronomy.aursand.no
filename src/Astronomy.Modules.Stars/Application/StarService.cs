@@ -63,7 +63,7 @@ internal sealed class StarService : IStarService
             frame == CoordinateFrame.EquatorialOfDate && positionType != PositionType.Apparent)
             throw new ArgumentException($"unsupported frame/positionType combination {frame}/{positionType} (supported: ICRS-J2000+astrometric, of-date+apparent, horizontal)");
 
-        var (ra, dec) = PositionAt(star, time, precessToOfDate: frame == CoordinateFrame.EquatorialOfDate);
+        var (ra, dec) = PositionAt(star, time, precessToOfDate: frame != CoordinateFrame.IcrJ2000);
         double? alt = null, az = null;
         if (frame == CoordinateFrame.Horizontal)
         {
@@ -204,7 +204,8 @@ internal sealed class StarService : IStarService
 
         var haRad = Math.Acos(Math.Clamp(cosH, -1, 1));
 
-        var gmst0 = Astr.SiderealTime(t0);
+        // The engine's SiderealTime returns GMST in HOURS (0-24) - convert to degrees.
+        var gmst0 = Astr.SiderealTime(t0) * 15.0;
         var lst0 = (gmst0 + lon + 360) % 360;
         var haNow = (lst0 - raOfDate + 360) % 360; // degrees, 0..360
 
