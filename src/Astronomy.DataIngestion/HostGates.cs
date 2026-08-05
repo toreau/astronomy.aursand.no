@@ -236,6 +236,7 @@ public static class HostGates
         return 0;
     }
 
+    private static readonly object ThreadTestSync = new();
 
     public static int SpiceThreadTest(string kernelDir)
     {
