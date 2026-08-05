@@ -251,6 +251,7 @@ app.Run("http://0.0.0.0:8080");
 
 static Astronomy.SharedKernel.Coordinates.CoordinateFrame ParseFrame(string? frame) => frame?.ToLowerInvariant() switch
 {
+    null => Astronomy.SharedKernel.Coordinates.CoordinateFrame.EquatorialOfDate,
     "icrs" or "j2000" => Astronomy.SharedKernel.Coordinates.CoordinateFrame.IcrJ2000,
     "of-date" or "equatorial-of-date" => Astronomy.SharedKernel.Coordinates.CoordinateFrame.EquatorialOfDate,
     "horizontal" or "alt-az" => Astronomy.SharedKernel.Coordinates.CoordinateFrame.Horizontal,
@@ -259,6 +260,7 @@ static Astronomy.SharedKernel.Coordinates.CoordinateFrame ParseFrame(string? fra
 
 static Astronomy.SharedKernel.Coordinates.PositionType ParsePositionType(string? positionType) => positionType?.ToLowerInvariant() switch
 {
+    null => Astronomy.SharedKernel.Coordinates.PositionType.Apparent,
     "astrometric" => Astronomy.SharedKernel.Coordinates.PositionType.Astrometric,
     "apparent" => Astronomy.SharedKernel.Coordinates.PositionType.Apparent,
     "geometric" => Astronomy.SharedKernel.Coordinates.PositionType.Geometric,
@@ -267,7 +269,7 @@ static Astronomy.SharedKernel.Coordinates.PositionType ParsePositionType(string?
 
 static Astronomy.SharedKernel.Coordinates.RefractionModel ParseRefraction(string? refraction) => refraction?.ToLowerInvariant() switch
 {
-    "none" => Astronomy.SharedKernel.Coordinates.RefractionModel.None,
+    null or "none" => Astronomy.SharedKernel.Coordinates.RefractionModel.None,
     "simple" or "standard" => Astronomy.SharedKernel.Coordinates.RefractionModel.Simple,
     _ => throw new ArgumentException($"unknown refraction '{refraction}'"),
 };
