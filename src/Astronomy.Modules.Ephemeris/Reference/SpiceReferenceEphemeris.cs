@@ -70,8 +70,9 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
         var (xyz, _) = SpkVector(body, utcUtc, et, "LT+S");
 
         var (dut1, xArcsec, yArcsec) = EopC04Interpolator.Interpolate(_eopC04, utc);
-        var ttMinusUtc = ttJd(et) * 86400.0 - (utcUtc - J2000Utc).TotalSeconds;
-        var ut1Jd = ttJd(et) - (ttMinusUtc + dut1) / 86400.0;
+        // et is TDB seconds past J2000; TT-UTC follows directly. TT-UT1 = TT-UTC - (UT1-UTC).
+        var ttMinusUtc = et - (utcUtc - J2000Utc).TotalSeconds;
+        var ut1Jd = ttJd(et) - (ttMinusUtc - dut1) / 86400.0;
 
         var rc2t = new double[9];
         Erfa.C2t06a(2451545.0, et / 86400.0, 2451545.0, ut1Jd - 2451545.0,
