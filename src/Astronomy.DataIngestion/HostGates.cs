@@ -564,8 +564,18 @@ public static class HostGates
             Console.WriteLine($"naif: {Path.GetFileName(tmp),-26} deleted (stray partial download)");
         }
 
-        // Gate-after-refresh: every kernel refresh produces fresh accuracy
-        // evidence against the Horizons fixtures (1972-2100, <= 1").
+        // Gate-after-refresh + EOP C04 refresh: heavy steps, throttled to at most
+        // once per 24h via a marker file, so any cron cadence is safe (weekly cron
+        // runs them once; a temporary every-5-min cadence only does the cheap
+        // kernel checks).
+        var marker = Path.Combine(Path.GetDirectoryName(kernelDir) ?? "/data", "naif-refresh.last");
+        var due = !File.Exists(marker) || DateTime.UtcNow - File.GetLastWriteTimeUtc(marker) > TimeSpan.FromHours(24);
+        if (!due)
+        {
+            Console.WriteLine($"naif: gate+c04 skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
+            return 0;
+        }
+
         Console.WriteLine("naif: running reference gate (compare-spice)...");
         var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
         Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
@@ -576,6 +586,8 @@ public static class HostGates
         var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
         Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
+        if (gateExit == 0 && c04Exit == 0)
+            File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
         return gateExit == 0 && c04Exit == 0 ? 0 : 1;
     }
 }
