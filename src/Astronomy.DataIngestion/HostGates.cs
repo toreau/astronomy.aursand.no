@@ -321,6 +321,7 @@ public static class HostGates
 
     public static int SpiceThreadTest(string kernelDir)
     {
+        CSpice.Erract("SET", 32, "RETURN", new byte[32]);
         foreach (var file in new[] { "de440s.bsp", "naif0012.tls", "pck00010.tpc" })
         {
             var path = Path.Combine(kernelDir, file);
