@@ -13,8 +13,8 @@ public static class Jobs
     private static readonly string[] EopC04CandidateUrls =
     {
         Environment.GetEnvironmentVariable("IERS_C04_URL") ?? "",
-        "https://datacenter.iers.org/data/latestVersion/5_BULLETIN_C04_IAU2000_TS_EOP.txt",
-        "https://datacenter.iers.org/products/eop/long-term/c04_IAU2000.txt",
+        "https://datacenter.iers.org/data/latestVersion/224_EOP_C04_14.62-NOW.IAU2000A224.txt",
+        "https://datacenter.iers.org/data/latestVersion/221_EOP_C04_14.XX.IAU2000A221.txt",
     };
 
     public static async Task<int> RunEopJobAsync(string dbPath, string dataRoot)
