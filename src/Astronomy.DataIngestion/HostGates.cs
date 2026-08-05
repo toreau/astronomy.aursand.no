@@ -502,7 +502,7 @@ public static class HostGates
         {
             var t = t0.AddMinutes(minutes);
             var v1 = oneSgp4.Propagate(iss, t);
-            var eci = sgpNet.FindPosition(minutes);
+            var eci = sgpNet.FindPosition((t - iss.EpochUtc).TotalMinutes);
             var v2 = eci.Position;
             var dev = Math.Sqrt((v1.XKm - v2.X) * (v1.XKm - v2.X) + (v1.YKm - v2.Y) * (v1.YKm - v2.Y) + (v1.ZKm - v2.Z) * (v1.ZKm - v2.Z));
             if (dev > maxDev) maxDev = dev;
@@ -513,7 +513,7 @@ public static class HostGates
 
         // Pass self-consistency: ISS from Oslo, min elevation 10 deg
         var observer = Astronomy.SharedKernel.Coordinates.ObserverLocation.FromDegrees(59.9, 10.7, 0);
-        var passes = SatellitePassPredictor.Predict(oneSgp4, iss, t0, t0.AddHours(24), observer, 0.0, 30.0, 10.0);
+        var passes = SatellitePassPredictor.Predict(oneSgp4, iss, t0, t0.AddHours(24), observer, 0.0, 10.0, 30.0);
         if (passes.Count == 0)
         {
             Console.WriteLine("sat-gate: FAIL - no ISS passes found over Oslo in the next 24h");
