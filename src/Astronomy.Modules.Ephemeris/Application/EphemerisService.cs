@@ -33,10 +33,10 @@ internal sealed class EphemerisService : IEphemerisService
             if (isReference) EnsureReferenceReady();
             var (alt, az) = _calculator.Horizontal(body, request.Time, request.Observer,
                 request.Refraction == RefractionModel.Simple);
-            var metadata = Metadata(request.Precision, "horizontal");
-            if (isReference)
-                metadata = metadata.WithWarning(new CalculationWarning("AST-7003",
-                    "reference tier computes J2000 positions; horizontal uses the consumer-tier chain"));
+            var metadata = isReference
+                ? Metadata(PrecisionMode.Consumer, "horizontal").WithWarning(new CalculationWarning("AST-7003",
+                    "reference tier computes J2000 positions; horizontal uses the consumer-tier chain"))
+                : Metadata(request.Precision, "horizontal");
             return Task.FromResult(new EphemerisPositionResult(
                 body.Name, 0, 0, alt, az, 0, metadata));
         }
