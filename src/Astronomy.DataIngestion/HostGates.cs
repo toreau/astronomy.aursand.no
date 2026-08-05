@@ -556,6 +556,19 @@ public static class HostGates
                 Console.WriteLine($"naif: {name,-14} FAIL {ex.Message.Split('\n')[0]}");
             }
         }
-        return 0;
+
+        // Clean up stray partial downloads (a killed stream leaves <name>.tmp).
+        foreach (var tmp in Directory.EnumerateFiles(kernelDir, "*.tmp"))
+        {
+            File.Delete(tmp);
+            Console.WriteLine($"naif: {Path.GetFileName(tmp),-26} deleted (stray partial download)");
+        }
+
+        // Gate-after-refresh: every kernel refresh produces fresh accuracy
+        // evidence against the Horizons fixtures (1972-2100, <= 1").
+        Console.WriteLine("naif: running reference gate (compare-spice)...");
+        var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
+        Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
+        return gateExit;
     }
 }
