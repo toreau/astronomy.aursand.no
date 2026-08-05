@@ -130,10 +130,13 @@ app.MapGet("/api/v1/ephemeris/{body}/position", async (
 {
     if (!BodyId.TryParse(body, out var bodyId))
         throw new ArgumentException($"unknown body '{body}'");
+    var observer = latitude is null || longitude is null
+        ? Astronomy.SharedKernel.Coordinates.ObserverLocation.FromDegrees(0, 0, 0)
+        : ObserverLocationFrom(latitude, longitude, elevationMeters);
     var request = new PositionRequest(
         bodyId.Name,
         ParseTime(time),
-        ObserverLocationFrom(latitude, longitude, elevationMeters),
+        observer,
         ParseFrame(frame),
         ParsePositionType(positionType),
         ParseRefraction(refraction),

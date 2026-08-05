@@ -99,7 +99,7 @@ internal sealed class EphemerisService : IEphemerisService
     {
         if (body == BodyId.Sun || body == BodyId.Moon)
             throw new ArgumentException($"visibility is not defined for '{body.Name}'");
-        var (magnitude, phaseAngle) = _calculator.IlluminationFor(body, time);
+        var (_, phaseAngle, magnitude) = _calculator.IlluminationFor(body, time);
         var (elongationDeg, visibility, _) = _calculator.Elongation(body, time);
         var constellation = _calculator.ConstellationOf(body, time);
         var (alt, az) = _calculator.Horizontal(body, time, observer, refraction: true);

@@ -96,10 +96,10 @@ internal sealed class EphemerisCalculator
         return (info.phase_fraction, info.phase_angle);
     }
 
-    public (double Fraction, double PhaseAngleDeg) IlluminationFor(BodyId body, DateTimeOffset utc)
+    public (double Fraction, double PhaseAngleDeg, double Magnitude) IlluminationFor(BodyId body, DateTimeOffset utc)
     {
         var info = Astr.Illumination(ToEngineBody(body), new AstroTime(utc.UtcDateTime));
-        return (info.phase_fraction, info.phase_angle);
+        return (info.phase_fraction, info.phase_angle, info.mag);
     }
 
     public (double ElongationDeg, string Visibility, double EclipticSeparationDeg) Elongation(BodyId body, DateTimeOffset utc)
