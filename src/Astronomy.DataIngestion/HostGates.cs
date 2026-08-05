@@ -124,10 +124,13 @@ public static class HostGates
             {
                 "sun" => CosineKitty.Body.Sun,
                 "moon" => CosineKitty.Body.Moon,
+                "mercury" => CosineKitty.Body.Mercury,
                 "venus" => CosineKitty.Body.Venus,
                 "mars" => CosineKitty.Body.Mars,
                 "jupiter" => CosineKitty.Body.Jupiter,
                 "saturn" => CosineKitty.Body.Saturn,
+                "uranus" => CosineKitty.Body.Uranus,
+                "neptune" => CosineKitty.Body.Neptune,
                 _ => CosineKitty.Body.Sun,
             };
             var sepsJ = new List<double>();
