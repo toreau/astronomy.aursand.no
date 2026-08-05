@@ -9,7 +9,9 @@ public class PositionAccuracyTests
     private static readonly EphemerisCalculator Calculator = new();
     private static readonly string FixturesDir = FindFixtures();
 
-    private static string FindFixtures()
+    private static string FindFixtures() => FixturesDirFor();
+
+    internal static string FixturesDirFor()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         for (var i = 0; i < 8 && dir != null; i++, dir = dir.Parent)
@@ -98,6 +100,62 @@ public class PositionAccuracyTests
             separations.Add(Separation(ra1, dec1, eq.RaDeg, eq.DecDeg));
         }
         Assert.True(separations.Average() < 30.0, $"moon mean {separations.Average():F2}\"");
+    }
+}
+
+public class PlanetPositionAccuracyTests
+{
+    private static readonly EphemerisCalculator Calculator = new();
+    private static readonly string FixturesDir = PositionAccuracyTests.FixturesDirFor();
+
+    public static IEnumerable<object[]> Rows() =>
+        new[]
+        {
+            "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune",
+        }.SelectMany(body => Load(body).Select(row => (object[])new object[] { body, row[0], row[1], row[2], row[3], row[4] }));
+
+    private static IEnumerable<object[]> Load(string body)
+    {
+        var path = Path.Combine(FixturesDir, $"horizons_{body}_sample.csv");
+        foreach (var line in File.ReadAllLines(path).Skip(1))
+        {
+            var p = line.Split(',');
+            yield return
+            [
+                DateTimeOffset.Parse(p[0], CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+                double.Parse(p[1], CultureInfo.InvariantCulture),
+                double.Parse(p[2], CultureInfo.InvariantCulture),
+                double.Parse(p[3], CultureInfo.InvariantCulture),
+                double.Parse(p[4], CultureInfo.InvariantCulture),
+            ];
+        }
+    }
+
+    private static double Separation(double ra1, double dec1, double ra2, double dec2)
+    {
+        var (r1, d1, r2, d2) = (ra1 * Math.PI / 180, dec1 * Math.PI / 180, ra2 * Math.PI / 180, dec2 * Math.PI / 180);
+        var cosSep = Math.Sin(d1) * Math.Sin(d2) + Math.Cos(d1) * Math.Cos(d2) * Math.Cos(r1 - r2);
+        return Math.Acos(Math.Clamp(cosSep, -1, 1)) * 180 / Math.PI * 3600;
+    }
+
+    [Theory]
+    [MemberData(nameof(Rows))]
+    public void Planet_J2000Astrometric_Within30Arcsec(string body, DateTimeOffset utc, double ra1, double dec1, double _ra2, double _dec2)
+    {
+        _ = (_ra2, _dec2);
+        var eq = Calculator.GeocentricEquatorial(new BodyId(body), utc, apparent: false);
+        var sep = Separation(ra1, dec1, eq.RaDeg, eq.DecDeg);
+        Assert.True(sep < 30.0, $"{body} {utc:O}: {sep:F2}\"");
+    }
+
+    [Theory]
+    [MemberData(nameof(Rows))]
+    public void Planet_OfDateApparent_Within30Arcsec(string body, DateTimeOffset utc, double _ra1, double _dec1, double ra2, double dec2)
+    {
+        _ = (_ra1, _dec1);
+        var eq = Calculator.GeocentricEquatorial(new BodyId(body), utc, apparent: true);
+        var sep = Separation(ra2, dec2, eq.RaDeg, eq.DecDeg);
+        Assert.True(sep < 30.0, $"{body} {utc:O}: {sep:F2}\"");
     }
 }
 
