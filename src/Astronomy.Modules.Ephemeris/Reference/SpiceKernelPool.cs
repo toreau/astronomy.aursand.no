@@ -187,7 +187,18 @@ internal sealed class SpiceKernelPool
 
     private static string Sha256Prefix(string path)
     {
+        const long hashCapBytes = 64L * 1024 * 1024;
+        var info = new FileInfo(path);
         using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream))[..8].ToLowerInvariant();
+        var buffer = new byte[Math.Min(info.Length, hashCapBytes)];
+        var read = 0;
+        while (read < buffer.Length)
+        {
+            var n = stream.Read(buffer, read, buffer.Length - read);
+            if (n == 0) break;
+            read += n;
+        }
+        var hash = Convert.ToHexString(SHA256.HashData(buffer.AsSpan(0, read)))[..8].ToLowerInvariant();
+        return info.Length > hashCapBytes ? $"{hash}(head{info.Length / (1024 * 1024)}MiB)" : hash;
     }
 }
