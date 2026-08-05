@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Runtime.InteropServices;
 using CosineKitty;
 using System.Security.Cryptography;
@@ -345,7 +346,7 @@ public static class HostGates
             ("24608", "Capella", 79.172328, 45.997991, 0.08),
             ("24436", "Rigel", 78.634467, -8.201638, 0.18),
             ("27989", "Betelgeuse", 88.792939, 7.407064, 0.45),
-            ("71683", "Antares", 247.351915, -26.432003, 0.96),
+            ("80763", "Antares", 247.351915, -26.432003, 0.96),
         };
         foreach (var (hip, name, ra, dec, vmag) in spotChecks)
         {
@@ -362,41 +363,53 @@ public static class HostGates
             Console.WriteLine($"star-gate: spot {name,-12} hip={hip} sep={sepArcSec,6:F2}\" mag={star.Vmag,6:F2} {(pass ? "PASS" : "FAIL")} (gate <= 5\")");
         }
 
-        var bscCount = 0;
+        var bscMatched = 0;
+        var bscSeps = new List<double>();
+        var bscUnmatched = 0;
         try
         {
             using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
-            var bsc = await HcGetStringAsyncSafe(hc, "https://cdsarc.cds.unistra.fr/ftp/V/50/catalog.dat");
-            if (bsc is null)
+            var gz = await hc.GetByteArrayAsync("https://cdsarc.cds.unistra.fr/ftp/cats/V/50/catalog.gz");
+            string bsc;
+            using (var gzs = new GZipStream(new MemoryStream(gz), CompressionMode.Decompress))
+            using (var reader = new StreamReader(gzs))
+                bsc = reader.ReadToEnd();
+            var bright = new List<(double RaDeg, double DecDeg, double Vmag)>();
+            foreach (var line in bsc.Split('\n'))
             {
-                Console.WriteLine("star-gate: FAIL - Yale BSC (CDS V/50) unreachable");
-                failures++;
+                if (line.Length < 160) continue;
+                if (!int.TryParse(line[0..4], out _)) continue;
+                if (!double.TryParse(line[79..83], NumberStyles.Float, CultureInfo.InvariantCulture, out var ras)) continue;
+                if (!double.TryParse(line[84..86], NumberStyles.Float, CultureInfo.InvariantCulture, out var ded)) continue;
+                if (!double.TryParse(line[86..88], NumberStyles.Float, CultureInfo.InvariantCulture, out var dem)) continue;
+                if (!double.TryParse(line[88..90], NumberStyles.Float, CultureInfo.InvariantCulture, out var des)) continue;
+                if (!double.TryParse(line[102..107], NumberStyles.Float, CultureInfo.InvariantCulture, out var vmag)) continue;
+                if (vmag >= 3.0) continue;
+                var rah = int.Parse(line[75..77]); var ram = int.Parse(line[77..79]);
+                var decSign = line[83] == '-' ? -1 : 1;
+                var raDeg = (rah + ram / 60.0 + ras / 3600.0) * 15.0;
+                var decDeg = decSign * (ded + dem / 60.0 + des / 3600.0);
+                bright.Add((raDeg, decDeg, vmag));
+                if (bright.Count >= 50) break;
             }
-            else
+            Console.WriteLine($"star-gate: bsc bright sample {bright.Count} stars");
+            foreach (var (ra, dec, _) in bright)
             {
-                foreach (var line in bsc.Split('\n'))
+                double best = double.MaxValue;
+                foreach (var star in catalog.Stars)
                 {
-                    if (line.Length < 94) continue;
-                    if (!int.TryParse(line[0..4], out var hr)) continue;
-                    var rah = ParseInt(line, 4, 2); var ram = ParseInt(line, 6, 2);
-                    var ras = ParseDouble(line, 8, 4);
-                    var decd = ParseInt(line, 14, 3); var decm = ParseInt(line, 17, 2);
-                    var decs = ParseDouble(line, 19, 4);
-                    var vmag = ParseDouble(line, 41, 5);
-                    if (rah is null || ram is null || ras is null || decd is null || decm is null || decs is null || vmag is null) continue;
-                    var decSign = line[13] == '-' ? -1 : 1;
-                    var bscRa = (rah.Value + ram.Value / 60.0 + ras.Value / 3600.0) * 15.0;
-                    var bscDec = decSign * (decd.Value + decm.Value / 60.0 + decs.Value / 3600.0);
-                    // match HYG by HR number
-                    bscCount++;
-                    if (bscCount > 400) break;
+                    var sep = Sep(star.RaDeg, star.DecDeg, ra, dec);
+                    if (sep < best) best = sep;
                 }
-                Console.WriteLine($"star-gate: bsc parse sample {bscCount} rows (structural check)");
-                if (bscCount < 100)
-                {
-                    Console.WriteLine("star-gate: FAIL - BSC parse produced too few rows; format may have changed");
-                    failures++;
-                }
+                if (best > 20.0) { bscUnmatched++; continue; }
+                bscMatched++;
+                bscSeps.Add(best);
+            }
+            Console.WriteLine($"star-gate: bsc-vs-hyg matched={bscMatched} unmatched={bscUnmatched} maxSep={(bscSeps.Count > 0 ? bscSeps.Max() : 0):F2}\"");
+            if (bscMatched < 40 || (bscSeps.Count > 0 && bscSeps.Max() > 5.0))
+            {
+                Console.WriteLine("star-gate: FAIL - BSC cross-validation (need >=40 matched, max <= 5\")");
+                failures++;
             }
         }
         catch (Exception ex)
