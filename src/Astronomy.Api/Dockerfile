@@ -3,6 +3,7 @@ WORKDIR /src
 COPY src/ .
 RUN dotnet restore Astronomy.Api/Astronomy.Api.csproj
 RUN dotnet publish Astronomy.Api/Astronomy.Api.csproj -c Release -o /out
+RUN dotnet publish Astronomy.DataIngestion/Astronomy.DataIngestion.csproj -c Release -o /out-worker
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS cspice
 RUN apt-get update \
@@ -24,6 +25,7 @@ RUN useradd --uid 10001 --create-home appuser
 USER appuser
 WORKDIR /app
 COPY --from=build /out .
+COPY --from=build /out-worker .
 COPY --from=cspice /libcspice.so /app/
 ENV ASPNETCORE_URLS=http://+:8080
 ENV ASTRONOMY_KERNEL_PATH=/data/kernels
