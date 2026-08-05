@@ -317,27 +317,37 @@ public static class HostGates
     {
         Directory.CreateDirectory(kernelDir);
         using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        try
+        // Large planetary kernels are re-fetched only when missing (they are stable
+        // artifacts; re-downloading ~3.3 GB on every run is wasteful). Small control
+        // kernels (tls/tpc/tf) are refreshed every run.
+        async Task<bool> FetchIfMissingAsync(string name, string url, long minBytes)
         {
-            var r = await hc.GetAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/", HttpCompletionOption.ResponseHeadersRead);
-            Console.WriteLine($"naif: spk dir reachable HTTP {(int)r.StatusCode}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"naif: spk dir NOT reachable: {ex.Message.Split('\n')[0]}");
-            return 1;
+            var path = Path.Combine(kernelDir, name);
+            var info = new FileInfo(path);
+            if (info.Exists && info.Length >= minBytes)
+            {
+                Console.WriteLine($"naif: {name,-26} present, skipping ({info.Length} bytes)");
+                return true;
+            }
+            try
+            {
+                var bytes = await hc.GetByteArrayAsync(url);
+                await File.WriteAllBytesAsync(path, bytes);
+                Console.WriteLine($"naif: {name,-26} {bytes.Length,10} bytes sha256={Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"naif: {name,-26} FAIL {ex.Message.Split('\n')[0]}");
+                return false;
+            }
         }
 
-        var mirrors = new[]
-        {
-            "https://raw.githubusercontent.com/arturania/cspice/master/kernels/spk/de440s.bsp",
-        };
-        var kernelPath = Path.Combine(kernelDir, "de440s.bsp");
-        var data = await hc.GetByteArrayAsync(mirrors[0]);
-        var sha = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
-        Console.WriteLine($"naif: de440s.bsp {data.Length} bytes sha256={sha}");
-        Console.WriteLine($"naif: expected (dual-mirror, S0.3) = c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2 match={sha == "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2"} (NOTE: de440s.bsp carries barycenter-only segments for the outer planets; the reference tier requires de440.bsp)");
-        await File.WriteAllBytesAsync(kernelPath, data);
+        await FetchIfMissingAsync("de441_part-1.bsp", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de441_part-1.bsp", 1_000_000_000);
+        await FetchIfMissingAsync("de441_part-2.bsp", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de441_part-2.bsp", 1_000_000_000);
+        await FetchIfMissingAsync("de440.bsp", "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp", 50_000_000);
+        await FetchIfMissingAsync("de440s_plus_MarsPC.bsp", "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/de440s_plus_MarsPC.bsp", 50_000_000);
+        await FetchIfMissingAsync("de440s.bsp", "https://raw.githubusercontent.com/arturania/cspice/master/kernels/spk/de440s.bsp", 30_000_000);
 
         try
         {
@@ -365,63 +375,6 @@ public static class HostGates
         catch (Exception ex)
         {
             Console.WriteLine($"naif: official de440 listing FAIL {ex.Message.Split('\n')[0]}");
-        }
-
-        const string JplFtpBase = "https://ssd.jpl.nasa.gov/ftp/eph/planets/bsp/";
-        try
-        {
-            var bytes = await hc.GetByteArrayAsync(JplFtpBase + "de441.bsp");
-            var shaKernel = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-            await File.WriteAllBytesAsync(Path.Combine(kernelDir, "de441.bsp"), bytes);
-            Console.WriteLine($"naif: de441.bsp {bytes.Length,10} bytes sha256={shaKernel}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"naif: de441.bsp (jpl ftp) FAIL {ex.Message.Split('\n')[0]} - trying NAIF parts");
-            foreach (var part in new[] { "de441_part-1.bsp", "de441_part-2.bsp" })
-            {
-                try
-                {
-                    var partBytes = await hc.GetByteArrayAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/" + part);
-                    await File.WriteAllBytesAsync(Path.Combine(kernelDir, part), partBytes);
-                    Console.WriteLine($"naif: {part} {partBytes.Length,10} bytes sha256={Convert.ToHexString(SHA256.HashData(partBytes)).ToLowerInvariant()}");
-                }
-                catch (Exception ex2)
-                {
-                    Console.WriteLine($"naif: {part} FAIL {ex2.Message.Split('\n')[0]}");
-                }
-            }
-        }
-
-        foreach (var (name, url) in new[]
-        {
-            ("de440s_plus_MarsPC.bsp", JplFtpBase + "de440s_plus_MarsPC.bsp"),
-            ("de440.bsp", JplFtpBase + "de440.bsp"),
-        })
-        {
-            try
-            {
-                var bytes = await hc.GetByteArrayAsync(url);
-                var shaKernel = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-                await File.WriteAllBytesAsync(Path.Combine(kernelDir, name), bytes);
-                Console.WriteLine($"naif: {name,-26} {bytes.Length,10} bytes sha256={shaKernel}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"naif: {name,-26} FAIL {ex.Message.Split('\n')[0]}");
-            }
-        }
-
-        try
-        {
-            var official = await hc.GetByteArrayAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440.bsp");
-            var sha440 = Convert.ToHexString(SHA256.HashData(official)).ToLowerInvariant();
-            await File.WriteAllBytesAsync(Path.Combine(kernelDir, "de440.bsp"), official);
-            Console.WriteLine($"naif: de440.bsp (naif mirror) {official.Length} bytes sha256={sha440}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"naif: de440.bsp (naif mirror) FAIL {ex.Message.Split('\n')[0]}");
         }
 
         try
