@@ -319,7 +319,15 @@ public static class HostGates
 
     private static readonly object ThreadTestSync = new();
 
-    public static int SpiceThreadTest(string kernelDir)
+    /// <summary>
+    /// Thread-safety measurement for the raw CSPICE lib. Each phase runs in its OWN
+    /// process (the cron/wrapper runs `unlocked` and `locked` separately) so that
+    /// corruption from the unlocked phase cannot poison the locked measurement
+    /// (SPICE pool state is process-global). Each phase computes its own
+    /// single-threaded baseline, then runs 8 threads x 200 spkpos with/without the
+    /// global lock and reports corrupted results.
+    /// </summary>
+    public static int SpiceThreadTest(string kernelDir, string mode)
     {
         CSpice.Erract("SET", 32, "RETURN", new byte[32]);
         foreach (var file in new[] { "de440s.bsp", "naif0012.tls", "pck00010.tpc" })
@@ -333,7 +341,7 @@ public static class HostGates
                 return 1;
             }
         }
-        Console.WriteLine("spice-threadtest: kernels furnished (raw, no lock)");
+        Console.WriteLine($"spice-threadtest: kernels furnished (raw, phase={mode})");
 
         var t0 = DateTimeOffset.Parse("2026-01-01T00:00:00Z");
         double SumAt(int i)
@@ -349,49 +357,46 @@ public static class HostGates
         for (var i = 0; i < baseline.Length; i++) baseline[i] = SumAt(i);
         Console.WriteLine("spice-threadtest: baseline computed (200 epochs, single-threaded)");
 
-        int RunParallel(bool useLock)
+        var useLock = mode == "locked";
+        var corruptions = 0;
+        Parallel.For(0, 8, _ =>
         {
-            var corruptions = 0;
-            Parallel.For(0, 8, _ =>
+            for (var i = 0; i < 200; i++)
             {
-                for (var i = 0; i < 200; i++)
+                double value;
+                try
                 {
-                    double value;
-                    try
+                    if (useLock)
                     {
-                        if (useLock)
-                        {
-                            lock (ThreadTestSync) value = SumAt(i);
-                        }
-                        else
-                        {
-                            value = SumAt(i);
-                        }
+                        lock (ThreadTestSync) value = SumAt(i);
                     }
-                    catch (InvalidOperationException)
+                    else
                     {
-                        Interlocked.Increment(ref corruptions);
-                        return;
+                        value = SumAt(i);
                     }
-                    if (Math.Abs(value - baseline[i]) > 1e-9)
-                        Interlocked.Increment(ref corruptions);
                 }
-            });
-            return corruptions;
-        }
-
-        var unlocked = RunParallel(useLock: false);
-        Console.WriteLine($"spice-threadtest: 8 threads x 200 spkpos WITHOUT lock -> {unlocked} corrupted results");
-        var locked = RunParallel(useLock: true);
-        Console.WriteLine($"spice-threadtest: 8 threads x 200 spkpos WITH lock    -> {locked} corrupted results");
-        if (locked != 0)
+                catch (InvalidOperationException)
+                {
+                    Interlocked.Increment(ref corruptions);
+                    return;
+                }
+                if (Math.Abs(value - baseline[i]) > 1e-9)
+                    Interlocked.Increment(ref corruptions);
+            }
+        });
+        Console.WriteLine($"spice-threadtest: 8 threads x 200 spkpos {mode.ToUpperInvariant(),-7} -> {corruptions} corrupted results");
+        if (useLock)
         {
-            Console.WriteLine("spice-threadtest: lock did not prevent corruption - INVESTIGATE");
-            return 1;
+            Console.WriteLine(corruptions == 0
+                ? "spice-threadtest: lock prevented all corruption - global lock VERIFIED"
+                : "spice-threadtest: lock did not prevent corruption - INVESTIGATE");
         }
-        Console.WriteLine(unlocked == 0
-            ? "spice-threadtest: no corruption observed without lock this run; global lock retained defensively (S0.3 observed CHKOUT corruption)"
-            : $"spice-threadtest: corruption confirmed without lock ({unlocked}); global lock REQUIRED (confirms S0.3)");
+        else
+        {
+            Console.WriteLine(corruptions == 0
+                ? "spice-threadtest: no corruption observed without lock this run (S0.3 observed corruption; lock retained defensively)"
+                : $"spice-threadtest: corruption confirmed without lock ({corruptions}); global lock REQUIRED (confirms S0.3)");
+        }
         return 0;
     }
 

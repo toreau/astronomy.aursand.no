@@ -36,7 +36,8 @@ switch (mode)
             args.Length > 2 ? args[2] : "/data/kernels");
 
     case "spice-threadtest":
-        return HostGates.SpiceThreadTest(args.Length > 1 ? args[1] : "/data/kernels");
+        return HostGates.SpiceThreadTest(args.Length > 1 ? args[1] : "/data/kernels",
+            args.Length > 2 ? args[2] : "unlocked");
 
     case "spice-probe":
         return HostGates.SpiceProbe(args.Length > 1 ? args[1] : "/data/kernels",
