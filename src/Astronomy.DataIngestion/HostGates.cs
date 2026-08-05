@@ -180,6 +180,7 @@ public static class HostGates
         Console.WriteLine("compare-spice: kernels: " + string.Join(", ",
             reference.KernelVersions.Select(kv => $"{kv.Key} sha256:{kv.Value}")));
         var failures = 0;
+        var skippedPre1972 = 0;
         foreach (var (name, _) in Bodies)
         {
             var path = Path.Combine(fixtureDir, $"horizons_{name}.csv");
@@ -193,6 +194,11 @@ public static class HostGates
                 var p = line.Split(',');
                 if (p.Length < 5) continue;
                 var utc = DateTimeOffset.Parse(p[0], null, DateTimeStyles.RoundtripKind);
+                if (utc.UtcDateTime < new DateTime(1972, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+                {
+                    skippedPre1972++;
+                    continue;
+                }
                 var astro = reference.Position(body, utc, apparent: false);
                 seps.Add(Sep(double.Parse(p[1], CultureInfo.InvariantCulture), double.Parse(p[2], CultureInfo.InvariantCulture), astro.RaDeg, astro.DecDeg));
                 if (n == 0)
@@ -209,6 +215,7 @@ public static class HostGates
                 .Select(x => $"{File.ReadLines(path).Skip(x.I).First().Split(',')[0]}={x.S:F2}\"");
             Console.WriteLine($"compare-spice: {name,-8} N={n,5} j2000-astrometric mean={seps.Average(),7:F3}\" max={max,7:F3}\" {(pass ? "PASS" : "FAIL")} (gate <= 1\") | apparent-vs-astrometric max={maxAberr,7:F1}\" (aberration sanity, not gated) | worst: {string.Join(" ", worst)}");
         }
+        Console.WriteLine($"compare-spice: (skipped {skippedPre1972} pre-1972 rows - reference tier validated for the leap-second era)");
         Console.WriteLine(failures == 0 ? "compare-spice: REFERENCE GATE PASS" : $"compare-spice: REFERENCE GATE FAIL ({failures} bodies over 1\")");
         return failures == 0 ? 0 : 1;
     }

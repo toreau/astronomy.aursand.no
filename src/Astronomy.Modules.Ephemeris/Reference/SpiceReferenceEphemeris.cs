@@ -9,6 +9,14 @@ namespace Astronomy.Modules.Ephemeris.Reference;
 /// </summary>
 public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
 {
+    /// <summary>
+    /// The reference tier is validated for the leap-second era. SPICE's UTC->ET
+    /// conversion for pre-1972 epochs relies on extrapolated delta-AT values and
+    /// disagrees with Horizons' historical delta-T by tens of seconds (measured
+    /// ~40s at 1900-01-01: moon 21" vs skyfield on the same kernel).
+    /// </summary>
+    private static readonly DateTime LeapSecondEraStart = new(1972, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
     private readonly SpiceKernelPool _pool;
 
     public SpiceReferenceEphemeris(string kernelDir)
@@ -29,9 +37,12 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
                 $"reference tier unavailable: {_pool.Reason}");
 
         var utcUtc = utc.ToUniversalTime().UtcDateTime;
-        if (utcUtc < _pool.CoverageStartUtc || utcUtc > _pool.CoverageEndUtc)
+        if (utcUtc < LeapSecondEraStart)
             throw new ArgumentException(
-                $"reference tier covers {_pool.CoverageStartUtc:yyyy-MM-dd}..{_pool.CoverageEndUtc:yyyy-MM-dd} (loaded planetary kernel coverage); requested {utc:yyyy-MM-dd}");
+                "precision=advanced|reference is validated for the leap-second era (1972-01-01 onwards); use precision=consumer for earlier epochs");
+        if (utcUtc > _pool.CoverageEndUtc)
+            throw new ArgumentException(
+                $"reference tier covers up to {_pool.CoverageEndUtc:yyyy-MM-dd} (loaded planetary kernel coverage); requested {utc:yyyy-MM-dd}");
 
         var abcorr = apparent ? "LT+S" : "LT";
         var et = _pool.Et(utc);
