@@ -342,10 +342,13 @@ public static class HostGates
         try
         {
             var listing = await hc.GetStringAsync("https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/");
-            var sizes = System.Text.RegularExpressions.Regex.Matches(listing, @"href=""([^""]*de44[01][a-z]*\.bsp)""[^<]*<[^>]*>([\d,]+)")
+            var bspNames = System.Text.RegularExpressions.Regex.Matches(listing, @"href=""([^""]+\.bsp)""")
+                .Select(m => m.Groups[1].Value).ToList();
+            Console.WriteLine($"naif: official planets .bsp files: {string.Join(", ", bspNames)}");
+            var sizes = System.Text.RegularExpressions.Regex.Matches(listing, @"href=""([^""]*\.bsp)""[^>]*>\s*([\d,]+)\s*")
                 .Select(m => $"{m.Groups[1].Value}={m.Groups[2].Value}")
                 .ToList();
-            Console.WriteLine($"naif: official de440 listing sizes: {string.Join(", ", sizes)}");
+            Console.WriteLine($"naif: official planet kernel sizes: {string.Join(", ", sizes)}");
         }
         catch (Exception ex)
         {
