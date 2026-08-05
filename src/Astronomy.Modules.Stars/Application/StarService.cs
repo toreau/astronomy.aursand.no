@@ -69,7 +69,8 @@ internal sealed class StarService : IStarService
         {
             var t = new AstroTime(time.UtcDateTime);
             var engineObserver = new Observer(observer.Latitude.Degrees, observer.Longitude.Degrees, observer.ElevationMeters);
-            var hor = Astr.Horizon(t, engineObserver, ra, dec, refraction ? Refraction.Normal : Refraction.None);
+            // The engine's Horizon expects RA in HOURS (its Equatorial convention).
+            var hor = Astr.Horizon(t, engineObserver, ra / 15.0, dec, refraction ? Refraction.Normal : Refraction.None);
             alt = hor.altitude;
             az = hor.azimuth;
         }

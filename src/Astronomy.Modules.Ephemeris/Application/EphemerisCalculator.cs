@@ -44,7 +44,8 @@ internal sealed class EphemerisCalculator
         var t = new AstroTime(utc.UtcDateTime);
         var eq = GeocentricEquatorial(body, utc, apparent: true);
         var engineObserver = new Observer(observer.Latitude.Degrees, observer.Longitude.Degrees, observer.ElevationMeters);
-        var hor = Astr.Horizon(t, engineObserver, eq.RaDeg, eq.DecDeg,
+        // The engine's Horizon expects RA in HOURS (its Equatorial convention).
+        var hor = Astr.Horizon(t, engineObserver, eq.RaDeg / 15.0, eq.DecDeg,
             refraction ? Refraction.Normal : Refraction.None);
         return (hor.altitude, hor.azimuth);
     }

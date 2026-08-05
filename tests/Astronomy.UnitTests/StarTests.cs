@@ -163,6 +163,25 @@ public class StarTests
     }
 
     [Fact]
+    public async Task GetStar_Horizontal_StarAtZenithIsNear90()
+    {
+        // Pin the RA-in-hours convention: at the J2000 epoch (precession ~ 0), an
+        // observer at the star's latitude with LST == RA sees the star at the zenith.
+        var lat = 45.0;
+        var lon = 10.0;
+        var utc = new DateTimeOffset(2000, 1, 1, 12, 0, 0, TimeSpan.Zero);
+        var gmstHours = CosineKitty.Astronomy.SiderealTime(new CosineKitty.AstroTime(utc.UtcDateTime));
+        var lstDeg = (gmstHours * 15.0 + lon + 360) % 360;
+        var zenithStar = new StarRecord("999001", "ZenithStar", "", "", "", "And",
+            lstDeg, lat, 0, 0, 100, 5.0, "G2V");
+        var catalog = new StarCatalog([zenithStar], "v38", "ok");
+        var service = new StarService(catalog, new StubCatalog());
+        var result = await service.GetStarAsync("999001", utc, CoordinateFrame.Horizontal, PositionType.Astrometric,
+            ObserverLocation.FromDegrees(lat, lon, 0), false, CancellationToken.None);
+        Assert.InRange(result.Position.AltDeg!.Value, 89.9, 90.1);
+    }
+
+    [Fact]
     public async Task GetRiseSet_SiriusOslo_EventsMatchHorizonCrossing()
     {
         var service = Service(Catalog(Sample));
