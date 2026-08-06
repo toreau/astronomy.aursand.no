@@ -647,3 +647,6 @@ The full-year payload is ~0.5 MB raw; responses are brotli/gzip-compressed
 | `AST-7002` | 200 (warning) | Endpoint uses the consumer chain at advanced/reference precision |
 | `AST-7003` | 200 (warning) | Horizontal reference chain degraded (EOP C04 absent) |
 | `AST-7004` | 200 (warning) | Satellite TLE stale (> 72 h) |
+
+Service-unavailable `detail` messages are path-redacted (filesystem paths are
+replaced with `<path>`); full reasons are available in the server logs.

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Astronomy.Api;
 using Astronomy.Infrastructure;
 using Astronomy.Infrastructure.Time;
 using Astronomy.Modules.Almanac.Application;
@@ -85,13 +86,15 @@ app.UseExceptionHandler(err => err.Run(async context =>
     var (status, code, detail) = ex switch
     {
         FeatureNotImplementedInPhaseException n => (StatusCodes.Status501NotImplemented, $"AST-5010:{n.Feature}:{n.Phase}", ex.Message),
-        ReferenceEphemerisUnavailableException => (StatusCodes.Status503ServiceUnavailable, "AST-5030", ex.Message),
-        Astronomy.Modules.Stars.Application.StarCatalogUnavailableException => (StatusCodes.Status503ServiceUnavailable, "AST-5031", ex.Message),
-        Astronomy.Modules.Satellites.Application.SatelliteElementsUnavailableException => (StatusCodes.Status503ServiceUnavailable, "AST-5032", ex.Message),
+        ReferenceEphemerisUnavailableException => (StatusCodes.Status503ServiceUnavailable, "AST-5030", ProblemDetailSanitizer.SanitizeDetail(ex.Message)),
+        Astronomy.Modules.Stars.Application.StarCatalogUnavailableException => (StatusCodes.Status503ServiceUnavailable, "AST-5031", ProblemDetailSanitizer.SanitizeDetail(ex.Message)),
+        Astronomy.Modules.Satellites.Application.SatelliteElementsUnavailableException => (StatusCodes.Status503ServiceUnavailable, "AST-5032", ProblemDetailSanitizer.SanitizeDetail(ex.Message)),
         ArgumentException or FormatException or OverflowException or InvalidDataException => (StatusCodes.Status400BadRequest, "AST-4001", ex.Message),
         _ => (StatusCodes.Status500InternalServerError, "AST-5000", "internal error"),
     };
-    if (status >= 500)
+    if (status == StatusCodes.Status503ServiceUnavailable)
+        logger.LogWarning(ex, "Service unavailable (requestId={RequestId}, path={Path})", requestId, context.Request.Path);
+    else if (status >= 500)
         logger.LogError(ex, "Unhandled exception (requestId={RequestId}, path={Path})", requestId, context.Request.Path);
     context.Response.StatusCode = status;
     context.Response.ContentType = "application/problem+json";
@@ -445,11 +448,11 @@ static string ReferenceStatus(IServiceProvider sp)
     try
     {
         var reference = sp.GetRequiredService<Astronomy.Modules.Ephemeris.Reference.IReferenceEphemeris>();
-        return reference.IsAvailable ? "ok" : $"unavailable ({reference.UnavailableReason})";
+        return reference.IsAvailable ? "ok" : $"unavailable ({ProblemDetailSanitizer.SanitizeDetail(reference.UnavailableReason)})";
     }
     catch (Exception ex)
     {
-        return $"error ({ex.Message.Split('\n')[0]})";
+        return $"error ({ProblemDetailSanitizer.SanitizeDetail(ex.Message.Split('\n')[0])})";
     }
 }
 
@@ -458,11 +461,11 @@ static string StarCatalogStatus(IServiceProvider sp)
     try
     {
         var catalog = sp.GetRequiredService<Astronomy.SharedKernel.Stars.StarCatalog>();
-        return catalog.IsAvailable ? "ok" : $"unavailable ({catalog.Reason})";
+        return catalog.IsAvailable ? "ok" : $"unavailable ({ProblemDetailSanitizer.SanitizeDetail(catalog.Reason)})";
     }
     catch (Exception ex)
     {
-        return $"error ({ex.Message.Split('\n')[0]})";
+        return $"error ({ProblemDetailSanitizer.SanitizeDetail(ex.Message.Split('\n')[0])})";
     }
 }
 
@@ -495,7 +498,7 @@ static async Task<string> SatelliteElementsStatus(IServiceProvider sp, bool dbOk
     }
     catch (Exception ex)
     {
-        return $"error ({ex.Message.Split('\n')[0]})";
+        return $"error ({ProblemDetailSanitizer.SanitizeDetail(ex.Message.Split('\n')[0])})";
     }
 }
 

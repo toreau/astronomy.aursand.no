@@ -36,6 +36,12 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Contains("kernels", body);
         Assert.Contains("starCatalog", body);
         Assert.Contains("satelliteElements", body);
+        // Component strings must be path-redacted even when unavailable.
+        using (var doc = JsonDocument.Parse(body))
+        {
+            foreach (var key in new[] { "kernels", "starCatalog", "satelliteElements" })
+                Assert.DoesNotMatch(@"\S*/\S*", doc.RootElement.GetProperty(key).GetString());
+        }
     }
 
     [Fact]
@@ -118,7 +124,17 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         var response = await client.GetAsync(
             "/api/v1/ephemeris/sun/position?time=2026-08-04T12:00:00Z&latitude=59.9&longitude=10.7&frame=of-date&positionType=apparent&refraction=none&precision=advanced");
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        Assert.Contains("AST-5030", await response.Content.ReadAsStringAsync());
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("AST-5030", body);
+        // The detail must be path-redacted (instance/type legitimately contain
+        // URL slashes, so scope the check to the detail field).
+        using (var doc = JsonDocument.Parse(body))
+        {
+            var detail = doc.RootElement.GetProperty("detail").GetString();
+            Assert.DoesNotMatch(@"\S*/\S*", detail);
+            Assert.DoesNotContain("/data", detail);
+            Assert.Contains("kernel directory not found", detail);
+        }
     }
 
     [Fact]
