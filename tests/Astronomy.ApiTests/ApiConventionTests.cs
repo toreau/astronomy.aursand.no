@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Astronomy.ApiTests;
@@ -331,6 +332,71 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         var first = await client.GetStringAsync(url);
         var second = await client.GetStringAsync(url);
         Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public async Task AlmanacYearly_Returns12Months()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/almanac/monthly?year=2026&latitude=59.9&longitude=10.7");
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("2026", doc.RootElement.GetProperty("year").GetString());
+        Assert.Equal(12, doc.RootElement.GetProperty("months").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task AlmanacMonthly_BothYearAndMonth_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(
+            "/api/v1/almanac/monthly?month=2026-08&year=2026&latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task AlmanacMonthly_NeitherYearNorMonth_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/almanac/monthly?latitude=59.9&longitude=10.7");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task CalendarRange_FullYear_Returns365Entries()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync("/api/v1/calendars/range?from=2026-01-01&to=2026-12-31");
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(365, doc.RootElement.GetProperty("entries").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task CalendarRange_SpanTooLong_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/calendars/range?from=2026-01-01&to=2027-01-02");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task CalendarRange_FromAfterTo_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/calendars/range?from=2026-12-31&to=2026-01-01");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CalendarRange_InvalidDate_Returns400()
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync("/api/v1/calendars/range?from=not-a-date&to=2026-12-31");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
     }
 
     public sealed record SunPositionResponse(string Body, double RightAscensionDeg, double DeclinationDeg, double? AltitudeDeg, double? AzimuthDeg, double DistanceKm);

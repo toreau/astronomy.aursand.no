@@ -165,6 +165,39 @@ curl "https://astronomy.aursand.no/api/v1/calendars/date-arithmetic?date=2026-08
 }
 ```
 
+### `GET /api/v1/calendars/range`
+
+`?from=2026-01-01&to=2026-12-31&timezone=Europe/Oslo` (inclusive; max span 366 days)
+
+```bash
+curl "https://astronomy.aursand.no/api/v1/calendars/range?from=2026-01-01&to=2026-12-31&timezone=Europe/Oslo"
+```
+
+```json
+{
+  "from": "2026-01-01",
+  "to": "2026-12-31",
+  "timeZone": "Europe/Oslo",
+  "entries": [
+    {
+      "gregorianDate": "2026-01-01",
+      "isoWeekDate": "2026-W01-4",
+      "julianDate": 2461041.5,
+      "dayOfWeek": "Thursday",
+      "timeZone": "Europe/Oslo",
+      "localTime": "2026-01-01T12:00:00+01:00",
+      "utcOffsetSeconds": 3600,
+      "metadata": { "datasets": [ { "name": "tzdb", "version": "TZDB: 2026c (mapping: 48.2)" } ], "algorithms": [ { "name": "gregorian-conversion", "version": "1.0" } ], "warnings": [] }
+    }
+  ],
+  "metadata": { "datasets": [ { "name": "tzdb", "version": "TZDB: 2026c (mapping: 48.2)" } ], "algorithms": [ { "name": "gregorian-conversion", "version": "1.0" } ], "warnings": [] }
+}
+```
+
+Each day is a `DateConversionResult` (same shape as `/calendars/convert`); an
+unknown timezone yields the per-entry `AST-6001` warning. `from` after `to`, or
+a span over 366 days, returns `400 AST-4001`. Cached 3600 s.
+
 ---
 
 ## Ephemeris
@@ -580,6 +613,24 @@ curl "https://astronomy.aursand.no/api/v1/almanac/daily?date=2026-08-05&latitude
   "metadata": { "datasets": [ { "name": "leap-seconds", "version": "iers-2026a" }, { "name": "eop-ut1", "version": "20260804" } ], "algorithms": [ { "name": "astronomy-engine", "version": "2.1.19:monthly" } ], "warnings": [] }
 }
 ```
+
+### `GET /api/v1/almanac/monthly?year=2026` (whole year)
+
+`?year=2026&latitude=59.9&longitude=10.7` — `year` and `month` are mutually
+exclusive; providing both (or neither) returns `400 AST-4001`. The response
+contains 12 `MonthlyAlmanacResult` sections (same shape as above), computed
+concurrently:
+
+```json
+{
+  "year": "2026",
+  "months": [ { "month": "2026-01", "days": [ ... ], "events": [ ... ] }, { "month": "2026-02", ... } ],
+  "metadata": { "datasets": [ { "name": "leap-seconds", "version": "iers-2026a" }, { "name": "eop-ut1", "version": "20260804" } ], "algorithms": [ { "name": "astronomy-engine", "version": "2.1.19:monthly" } ], "warnings": [] }
+}
+```
+
+The full-year payload is ~0.5 MB raw; responses are brotli/gzip-compressed
+(~60–90 KB over the wire). Cached 900 s.
 
 ---
 

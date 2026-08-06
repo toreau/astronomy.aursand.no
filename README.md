@@ -18,6 +18,7 @@ against JPL Horizons across 1900–2150.
 | Time | `GET /api/v1/time/time-scales` | UTC, TAI, TT, UT1 for an instant |
 | Calendars | `GET /api/v1/calendars/convert` | Gregorian date → ISO week date, Julian day number, timezone |
 | Calendars | `GET /api/v1/calendars/date-arithmetic` | Date ± days with calendar-aware results |
+| Calendars | `GET /api/v1/calendars/range` | Bulk conversion for a date range (≤ 366 days) |
 | Ephemeris | `GET /api/v1/ephemeris/{body}/position` | RA/Dec (icrs, of-date, horizontal) + distance |
 | Ephemeris | `GET /api/v1/ephemeris/{body}/rise-set` | Rise/set/transit for a date and observer |
 | Ephemeris | `GET /api/v1/ephemeris/twilight` | Civil/nautical/astronomical twilight |
@@ -34,7 +35,7 @@ against JPL Horizons across 1900–2150.
 | Satellites | `GET /api/v1/satellites/search` | Element lookup by name/NORAD |
 | Satellites | `GET /api/v1/satellites/status` | Element dataset freshness |
 | Almanac | `GET /api/v1/almanac/daily` | Sun/moon/planet day sheet for an observer |
-| Almanac | `GET /api/v1/almanac/monthly` | Full month of daily sections |
+| Almanac | `GET /api/v1/almanac/monthly` | Full month — or full year via `year=` — of daily sections |
 
 Full request/response examples: **[docs/API.md](docs/API.md)**.
 

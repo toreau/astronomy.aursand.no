@@ -41,6 +41,20 @@ internal sealed class CalendarService : ICalendarService
         return new DateArithmeticResult(date.ToString("yyyy-MM-dd"), days, result.ToString("yyyy-MM-dd"), timeZone, Metadata());
     }
 
+    /// <summary>Bulk conversion for an inclusive date range (capped at 366 days).</summary>
+    public CalendarRangeResult ConvertRange(DateOnly from, DateOnly to, string? timeZone)
+    {
+        if (to < from)
+            throw new ArgumentException($"to ({to:yyyy-MM-dd}) precedes from ({from:yyyy-MM-dd})");
+        var days = to.DayNumber - from.DayNumber + 1;
+        if (days > 366)
+            throw new ArgumentException($"range exceeds 366 days (got {days})");
+        var entries = new List<DateConversionResult>(days);
+        for (var d = from; d <= to; d = d.AddDays(1))
+            entries.Add(ConvertDate(d, timeZone));
+        return new CalendarRangeResult(from.ToString("yyyy-MM-dd"), to.ToString("yyyy-MM-dd"), timeZone, entries, Metadata());
+    }
+
     private static CalculationMetadata Metadata() =>
         new([new DatasetRef("tzdb", TzdbDateTimeZoneSource.Default.VersionId ?? "unknown")],
             [new AlgorithmRef("gregorian-conversion", "1.0")], []);

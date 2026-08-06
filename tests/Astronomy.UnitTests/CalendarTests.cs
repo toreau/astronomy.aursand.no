@@ -58,4 +58,54 @@ public class CalendarTests
         var result = Service().AddDays(new DateOnly(2026, 8, 5), -1, null);
         Assert.Equal("2026-08-04", result.ResultDate);
     }
+
+    [Fact]
+    public void ConvertRange_FullYear_Returns365Entries()
+    {
+        var result = Service().ConvertRange(new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31), null);
+        Assert.Equal("2026-01-01", result.From);
+        Assert.Equal("2026-12-31", result.To);
+        Assert.Equal(365, result.Entries.Count);
+        Assert.Equal("2026-01-01", result.Entries[0].GregorianDate);
+        Assert.Equal("2026-12-31", result.Entries[^1].GregorianDate);
+    }
+
+    [Fact]
+    public void ConvertRange_LeapYear_Returns366Entries()
+    {
+        var result = Service().ConvertRange(new DateOnly(2028, 1, 1), new DateOnly(2028, 12, 31), null);
+        Assert.Equal(366, result.Entries.Count);
+    }
+
+    [Fact]
+    public void ConvertRange_SpanTooLong_Throws()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            Service().ConvertRange(new DateOnly(2026, 1, 1), new DateOnly(2027, 1, 2), null));
+        Assert.Contains("366", ex.Message);
+    }
+
+    [Fact]
+    public void ConvertRange_FromAfterTo_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            Service().ConvertRange(new DateOnly(2026, 12, 31), new DateOnly(2026, 1, 1), null));
+    }
+
+    [Fact]
+    public void ConvertRange_TimezoneAppliedToEntries()
+    {
+        var result = Service().ConvertRange(new DateOnly(2026, 8, 5), new DateOnly(2026, 8, 5), "Europe/Oslo");
+        Assert.Single(result.Entries);
+        Assert.Equal("Europe/Oslo", result.Entries[0].TimeZone);
+        Assert.Equal(7200, result.Entries[0].UtcOffsetSeconds); // CEST
+    }
+
+    [Fact]
+    public void ConvertRange_SingleDay_Inclusive()
+    {
+        var result = Service().ConvertRange(new DateOnly(2026, 8, 5), new DateOnly(2026, 8, 5), null);
+        Assert.Single(result.Entries);
+        Assert.Equal("2026-W32-3", result.Entries[0].IsoWeekDate);
+    }
 }

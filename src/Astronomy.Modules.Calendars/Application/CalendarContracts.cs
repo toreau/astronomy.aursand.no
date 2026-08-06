@@ -21,8 +21,16 @@ public sealed record DateArithmeticResult(
     string? TimeZone,
     CalculationMetadata Metadata);
 
+public sealed record CalendarRangeResult(
+    string From,
+    string To,
+    string? TimeZone,
+    IReadOnlyList<DateConversionResult> Entries,
+    CalculationMetadata Metadata);
+
 public interface ICalendarService
 {
     DateConversionResult ConvertDate(DateOnly date, string? timeZone);
     DateArithmeticResult AddDays(DateOnly date, int days, string? timeZone);
+    CalendarRangeResult ConvertRange(DateOnly from, DateOnly to, string? timeZone);
 }

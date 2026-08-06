@@ -38,6 +38,7 @@ catch (Exception ex)
 builder.Services.AddAstronomyInfrastructure(dbPath, dataRoot);
 builder.Services.AddMemoryCache();
 builder.Services.AddOutputCache();
+builder.Services.AddResponseCompression();
 builder.Services.AddSingleton(sp =>
     TimeDatasetLoaders.CreateTimeScaleConverter(sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), dataRoot));
 builder.Services.AddSingleton(sp =>
@@ -79,8 +80,7 @@ app.Use(async (context, next) =>
 });
 
 app.UseExceptionHandler(err => err.Run(async context =>
-{
-    var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
+{    var ex = context.Features.Get<IExceptionHandlerFeature>()?.Error;
     var requestId = context.Items["requestId"]?.ToString() ?? "unknown";
     var (status, code, detail) = ex switch
     {
@@ -105,6 +105,8 @@ app.UseExceptionHandler(err => err.Run(async context =>
         code,
     }));
 }));
+
+app.UseResponseCompression();
 
 app.UseOutputCache();
 
@@ -154,6 +156,14 @@ app.MapGet("/api/v1/calendars/date-arithmetic", (string date, int days, string? 
     var parsed = ParseDate(date);
     return Results.Ok(service.AddDays(parsed, days, timezone));
 });
+
+app.MapGet("/api/v1/calendars/range", (
+    string from, string to, string? timezone, ICalendarService service, HttpContext context) =>
+{
+    var result = service.ConvertRange(ParseDate(from), ParseDate(to), timezone);
+    context.Response.Headers.CacheControl = "public, max-age=3600";
+    return Results.Ok(result);
+}).CacheOutput(p => p.Expire(TimeSpan.FromSeconds(3600)));
 
 app.MapGet("/api/v1/ephemeris/{body}/position", async (
     string body, string? time, double? latitude, double? longitude, double? elevationMeters,
@@ -385,14 +395,26 @@ app.MapGet("/api/v1/almanac/daily", async (
 }).CacheOutput(p => p.Expire(TimeSpan.FromSeconds(900)));
 
 app.MapGet("/api/v1/almanac/monthly", async (
-    string month, double? latitude, double? longitude, double? elevationMeters,
+    string? month, int? year, double? latitude, double? longitude, double? elevationMeters,
     IAlmanacService service, CancellationToken ct, HttpContext context) =>
 {
-    if (!DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture,
-            System.Globalization.DateTimeStyles.None, out var parsed))
-        throw new ArgumentException($"invalid month '{month}' (expected yyyy-MM)");
-    var result = await service.GetMonthlyAsync(parsed.Year, parsed.Month,
-        ObserverLocationFrom(latitude, longitude, elevationMeters), ct);
+    var observer = ObserverLocationFrom(latitude, longitude, elevationMeters);
+    object result;
+    if (year is not null)
+    {
+        if (month is not null)
+            throw new ArgumentException("year and month are mutually exclusive; provide exactly one");
+        result = await service.GetYearlyAsync(year.Value, observer, ct);
+    }
+    else
+    {
+        if (month is null)
+            throw new ArgumentException("month (yyyy-MM) or year (yyyy) is required");
+        if (!DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var parsed))
+            throw new ArgumentException($"invalid month '{month}' (expected yyyy-MM)");
+        result = await service.GetMonthlyAsync(parsed.Year, parsed.Month, observer, ct);
+    }
     context.Response.Headers.CacheControl = "public, max-age=900";
     return Results.Ok(result);
 }).CacheOutput(p => p.Expire(TimeSpan.FromSeconds(900)));
