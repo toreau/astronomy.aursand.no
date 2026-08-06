@@ -126,6 +126,7 @@ app.MapGet("/health/ready", async (HttpContext context, CancellationToken ct) =>
         status = db == "ok" ? "ready" : "not-ready",
         db,
         kernels = ReferenceStatus(sp),
+        kernelHashes = KernelHashes(sp),
         starCatalog = StarCatalogStatus(sp),
         datasets = DatasetVersions(sp, db == "ok"),
         satelliteElements = await SatelliteElementsStatus(sp, db == "ok", ct),
@@ -453,6 +454,21 @@ static string ReferenceStatus(IServiceProvider sp)
     catch (Exception ex)
     {
         return $"error ({ProblemDetailSanitizer.SanitizeDetail(ex.Message.Split('\n')[0])})";
+    }
+}
+
+static Dictionary<string, string> KernelHashes(IServiceProvider sp)
+{
+    try
+    {
+        var reference = sp.GetRequiredService<Astronomy.Modules.Ephemeris.Reference.IReferenceEphemeris>();
+        return reference.IsAvailable
+            ? reference.KernelVersions.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)
+            : new Dictionary<string, string>(StringComparer.Ordinal);
+    }
+    catch
+    {
+        return new Dictionary<string, string>(StringComparer.Ordinal);
     }
 }
 

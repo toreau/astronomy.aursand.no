@@ -41,6 +41,8 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         {
             foreach (var key in new[] { "kernels", "starCatalog", "satelliteElements" })
                 Assert.DoesNotMatch(@"\S*/\S*", doc.RootElement.GetProperty(key).GetString());
+            // kernelHashes is always present (empty when the reference tier is unavailable).
+            Assert.Equal(JsonValueKind.Object, doc.RootElement.GetProperty("kernelHashes").ValueKind);
         }
     }
 

@@ -341,15 +341,39 @@ public static class HostGates
     /// catalog is epoch/equinox 2000.0) with a tolerance of 5" (HYG rounding
     /// plus BSC precision).
     /// </summary>
-    public static async Task<int> StarGate(string fixtureDir)
+    public static async Task<int> StarGate(string fixtureDir, string? version = null)
     {
         var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
         var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
-        var catalog = Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(
-            new Astronomy.Infrastructure.Catalog.DatasetCatalog(
-                new Astronomy.Infrastructure.Registry.DatasetRegistry(() => Astronomy.Infrastructure.InfrastructureRegistrar.CreateRegistryContext(dbPath)),
-                dataRoot),
-            dataRoot);
+        Astronomy.SharedKernel.Stars.StarCatalog catalog;
+        if (version is null)
+        {
+            catalog = Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(
+                new Astronomy.Infrastructure.Catalog.DatasetCatalog(
+                    new Astronomy.Infrastructure.Registry.DatasetRegistry(() => Astronomy.Infrastructure.InfrastructureRegistrar.CreateRegistryContext(dbPath)),
+                    dataRoot),
+                dataRoot);
+        }
+        else
+        {
+            // Gate a staged (not-yet-active) version directly from its dataset file.
+            var file = Path.Combine(dataRoot, "datasets", "star-catalog-hyg", version, "star-catalog-hyg.csv");
+            if (!File.Exists(file))
+            {
+                Console.WriteLine($"star-gate: staged catalog file missing: {file}");
+                return 1;
+            }
+            var stars = new List<Astronomy.SharedKernel.Stars.StarRecord>(120_000);
+            foreach (var line in File.ReadLines(file).Skip(1))
+            {
+                if (line.Length == 0) continue;
+                try { stars.Add(Astronomy.SharedKernel.Stars.StarRecord.Parse(line)); }
+                catch (FormatException) { }
+            }
+            catalog = stars.Count == 0
+                ? Astronomy.SharedKernel.Stars.StarCatalog.Unavailable
+                : new Astronomy.SharedKernel.Stars.StarCatalog(stars.ToArray(), version, "ok");
+        }
         if (!catalog.IsAvailable)
         {
             Console.WriteLine($"star-gate: catalog unavailable: {catalog.Reason}");
@@ -465,25 +489,26 @@ public static class HostGates
     /// agreement (One_Sgp4 vs SGP.NET over 24h), and pass self-consistency
     /// (altitude at the computed rise/set ~= minElevation).
     /// </summary>
-    public static int SatGate()
+    public static int SatGate(string? version = null)
     {
         var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
         var active = registry.ActiveVersion("satellite-elements");
-        if (active is null)
+        if (active is null && version is null)
         {
             Console.WriteLine("sat-gate: satellite-elements dataset not ingested");
             return 1;
         }
-        var rows = SatelliteStore.ReadElements(dbPath, active.Version);
+        var gateVersion = version ?? active!.Version;
+        var rows = SatelliteStore.ReadElements(dbPath, gateVersion);
         var iss = rows.FirstOrDefault(r => r.NoradId == "25544");
         if (iss is null)
         {
-            Console.WriteLine("sat-gate: ISS (25544) not in the active dataset");
+            Console.WriteLine($"sat-gate: ISS (25544) not in dataset {gateVersion}");
             return 1;
         }
         var ageHours = (DateTimeOffset.UtcNow - iss.EpochUtc).TotalHours;
-        Console.WriteLine($"sat-gate: dataset {active.Version} elements={rows.Count} ISS tle-age={ageHours:F1}h");
+        Console.WriteLine($"sat-gate: dataset {gateVersion} elements={rows.Count} ISS tle-age={ageHours:F1}h");
         var failures = 0;
         if (ageHours > 72)
         {
@@ -812,16 +837,22 @@ public static class HostGates
             Console.WriteLine($"naif: {Path.GetFileName(tmp),-26} deleted (stray partial download)");
         }
 
-        // EOP C04 (IERS) refresh - daily product, refreshed on every naif run
-        // (cheap, ~3.6MB; date-based version restages in place).
+        // EOP UT1-UTC (USNO ser7) - daily product; refreshed on every naif run.
         var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
         var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
+        var eopExit = await Jobs.RunEopJobAsync(dbPath, dataRoot);
+        Console.WriteLine(eopExit == 0 ? "naif: eop-ut1 refresh OK" : "naif: eop-ut1 refresh FAIL");
+
+        // EOP C04 (IERS) refresh - daily product, refreshed on every naif run
+        // (cheap, ~3.6MB; date-based version restages in place).
         var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
         Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
         // Satellite elements (CelesTrak stations) - daily product; refreshed on
         // every naif run regardless of the 24h throttle (cheap, ~120 rows).
-        var ommExit = await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot);
+        // Gate-before-activate: the staged set must pass sat-gate to go active.
+        var ommExit = await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot,
+            gate: v => Task.FromResult(SatGate(v) == 0));
         Console.WriteLine(ommExit == 0 ? "naif: satellite-elements refresh OK" : "naif: satellite-elements refresh FAIL");
 
         // Leap seconds (IERS) - changes only when a leap second is announced;
@@ -831,19 +862,26 @@ public static class HostGates
 
         // Star catalog - ingest once if not active yet (the HYG catalog is static;
         // this gap-fill runs on every naif invocation regardless of the throttle,
-        // but only acts when the dataset is missing).
+        // but only acts when the dataset is missing). Gate-before-activate.
         var starExit = 0;
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
         if (registry.ActiveVersion("star-catalog-hyg") is null)
         {
             Console.WriteLine("naif: star catalog not active - ingesting...");
-            starExit = await Jobs.RunStarCatalogJobAsync(dbPath, dataRoot);
+            starExit = await Jobs.RunStarCatalogJobAsync(dbPath, dataRoot,
+                gate: async v => await StarGate("/data/fixtures", v) == 0);
             Console.WriteLine(starExit == 0 ? "naif: star-catalog ingest OK" : "naif: star-catalog ingest FAIL");
         }
         else
         {
             Console.WriteLine("naif: star catalog already active, skipping");
         }
+
+        // Kernel-change detection: if the API reports loaded kernel hashes that
+        // differ from the volume (naif just refreshed them), restart the api
+        // container so the new kernels (incl. the leap-second tls) take effect.
+        // Opt-in via env: COOLIFY_API_URL + COOLIFY_API_TOKEN + COOLIFY_API_APP_UUID.
+        await MaybeRestartApiOnKernelChangeAsync(kernelDir);
 
         // Gate-after-refresh: throttled to at most once per 24h via a marker file,
         // so any cron cadence is safe (weekly cron runs it once; a temporary
@@ -853,16 +891,90 @@ public static class HostGates
         if (!due)
         {
             Console.WriteLine($"naif: gate skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
-            return c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0 ? 0 : 1;
+            return eopExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0 ? 0 : 1;
         }
 
         Console.WriteLine("naif: running reference gate (compare-spice)...");
         var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
         Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
 
-        if (gateExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0)
+        if (gateExit == 0 && eopExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        return gateExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0 ? 0 : 1;
+        return gateExit == 0 && eopExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Kernel-change detection and api restart (opt-in). After naif refreshes the
+    /// kernel files, compare the volume hashes against the hashes the running API
+    /// loaded (reported by /health/ready). On mismatch, restart the api container
+    /// via the Coolify API so the new kernels (incl. the leap-second tls) take
+    /// effect. Enabled only when COOLIFY_API_URL, COOLIFY_API_TOKEN and
+    /// COOLIFY_API_APP_UUID are set.
+    /// </summary>
+    private static async Task MaybeRestartApiOnKernelChangeAsync(string kernelDir)
+    {
+        var coolifyUrl = Environment.GetEnvironmentVariable("COOLIFY_API_URL");
+        var token = Environment.GetEnvironmentVariable("COOLIFY_API_TOKEN");
+        var appUuid = Environment.GetEnvironmentVariable("COOLIFY_API_APP_UUID");
+        if (string.IsNullOrEmpty(coolifyUrl) || string.IsNullOrEmpty(token) || string.IsNullOrEmpty(appUuid))
+            return;
+        var apiUrl = Environment.GetEnvironmentVariable("ASTRONOMY_API_URL") ?? "https://astronomy.aursand.no";
+
+        Dictionary<string, string>? apiHashes = null;
+        try
+        {
+            using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var doc = System.Text.Json.JsonDocument.Parse(await hc.GetStringAsync(apiUrl + "/health/ready"));
+            apiHashes = doc.RootElement.TryGetProperty("kernelHashes", out var kh)
+                ? kh.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? "")
+                : null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: kernel-change check: api unreachable ({ex.Message.Split('\n')[0]}), skipping");
+            return;
+        }
+        if (apiHashes is null || apiHashes.Count == 0)
+        {
+            Console.WriteLine("naif: kernel-change check: api reports no kernel hashes, skipping");
+            return;
+        }
+
+        var changed = new List<string>();
+        foreach (var (kernel, apiHash) in apiHashes)
+        {
+            var volumeFile = Path.Combine(kernelDir, kernel);
+            if (!File.Exists(volumeFile))
+            {
+                changed.Add($"{kernel} (missing on volume)");
+                continue;
+            }
+            var volumeHash = Sha256Prefix(volumeFile);
+            if (!string.Equals(apiHash, volumeHash, StringComparison.OrdinalIgnoreCase))
+                changed.Add($"{kernel} ({apiHash} -> {volumeHash})");
+        }
+        if (changed.Count == 0)
+        {
+            Console.WriteLine("naif: kernel-change check: api kernels match the volume, no restart needed");
+            return;
+        }
+
+        Console.WriteLine($"naif: kernel-change detected ({string.Join(", ", changed)}) - restarting api via Coolify");
+        try
+        {
+            using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+            using var request = new HttpRequestMessage(HttpMethod.Post,
+                $"{coolifyUrl.TrimEnd('/')}/api/v1/applications/{appUuid}/restart");
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            using var response = await hc.SendAsync(request);
+            Console.WriteLine(response.IsSuccessStatusCode
+                ? "naif: api restart requested OK"
+                : $"naif: api restart FAILED ({(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: api restart FAILED {ex.Message.Split('\n')[0]} (restart manually)");
+        }
     }
 
     /// <summary>

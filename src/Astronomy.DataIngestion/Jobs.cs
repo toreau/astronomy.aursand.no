@@ -45,6 +45,12 @@ public static class Jobs
             Console.WriteLine($"eop: REJECTED - implausible latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}");
             return 1;
         }
+        var activeCsv = ActiveDatasetCsvPath(dataRoot, "eop-ut1", "eop-ut1.csv");
+        if (Ut1ContinuityViolated(samples[^1].Ut1MinusUtc, activeCsv))
+        {
+            Console.WriteLine("eop: REJECTED - latest UT1-UTC jumps > 0.5s vs the active dataset (source anomaly)");
+            return 1;
+        }
 
         var version = DateTime.UtcNow.ToString("yyyyMMdd");
         var dir = Path.Combine(dataRoot, "datasets", "eop-ut1", version);
@@ -111,6 +117,12 @@ public static class Jobs
         if (Math.Abs(samples[^1].Ut1MinusUtc) > 2.0)
         {
             Console.WriteLine($"eop-c04: REJECTED - implausible latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}");
+            return 1;
+        }
+        var activeCsv = ActiveDatasetCsvPath(dataRoot, "eop-c04", "eop-c04.csv");
+        if (Ut1ContinuityViolated(samples[^1].Ut1MinusUtc, activeCsv))
+        {
+            Console.WriteLine("eop-c04: REJECTED - latest UT1-UTC jumps > 0.5s vs the active dataset (source anomaly)");
             return 1;
         }
 
@@ -205,7 +217,7 @@ public static class Jobs
 
     private static readonly DateTimeOffset LeapSecondEraStart = new(1972, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    public static async Task<int> RunStarCatalogJobAsync(string dbPath, string dataRoot)
+    public static async Task<int> RunStarCatalogJobAsync(string dbPath, string dataRoot, Func<string, Task<bool>>? gate = null)
     {
         const string sourceUrl = "https://raw.githubusercontent.com/astronexus/HYG-Database/main/hyg/v3/hyg_v38.csv.gz";
         using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
@@ -270,7 +282,8 @@ public static class Jobs
 
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
         await registry.StageAsync("star-catalog-hyg", version, checksum);
-        await registry.ActivateAsync("star-catalog-hyg", version);
+        if (await GateAndActivateAsync("star-catalog-hyg", version, registry, gate) != 0)
+            return 1;
         Console.WriteLine($"star-catalog: {stars.Count} stars staged+activated as {version} (mag range {magMin:F1}..{magMax:F1})");
         return 0;
     }
@@ -281,7 +294,7 @@ public static class Jobs
     /// same-day reruns (same version, upsert semantics); on any failure the
     /// currently-active dataset stays untouched.
     /// </summary>
-    public static async Task<int> RunSatelliteElementsRefreshAsync(string dbPath, string dataRoot)
+    public static async Task<int> RunSatelliteElementsRefreshAsync(string dbPath, string dataRoot, Func<string, Task<bool>>? gate = null)
     {
         // The registry + satellite schema are normally created by the heartbeat/API
         // startup; ensure they exist so this job also works standalone on a fresh db.
@@ -298,7 +311,9 @@ public static class Jobs
             Console.WriteLine($"omm: refresh FAIL - staging {version} rejected (active dataset unchanged)");
             return 1;
         }
-        await service.ActivateAsync(version);
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        if (await GateAndActivateAsync("satellite-elements", version, registry, gate) != 0)
+            return 1;
         var s = await service.GetStatusAsync();
         Console.WriteLine($"omm: refresh ok - active={s.ActiveVersion} elements={s.ElementCount} fresh={s.Fresh} warn={s.Warn} degraded={s.Degraded} refuse={s.Refuse}");
         return 0;
@@ -360,4 +375,50 @@ public static class Jobs
 
     private static string Sha256(string s) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
+
+    /// <summary>Path of the active dataset's CSV, or null when not ingested.</summary>
+    internal static string? ActiveDatasetCsvPath(string dataRoot, string datasetName, string fileName)
+    {
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(
+            Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db"));
+        var active = registry.ActiveVersion(datasetName);
+        if (active is null) return null;
+        var path = Path.Combine(dataRoot, "datasets", datasetName, active.Version, fileName);
+        return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>
+    /// Continuity guard: the latest UT1-UTC must not jump by more than
+    /// <paramref name="maxJumpSeconds"/> vs the active dataset's latest value
+    /// (leap-second-scale change only). Catches source-format/content anomalies
+    /// that per-row plausibility guards miss.
+    /// </summary>
+    internal static bool Ut1ContinuityViolated(double newUt1MinusUtc, string? activeCsvPath, double maxJumpSeconds = 0.5)
+    {
+        if (activeCsvPath is null || !File.Exists(activeCsvPath)) return false;
+        var lines = File.ReadAllLines(activeCsvPath);
+        if (lines.Length < 2) return false;
+        var parts = lines[^1].Split(',');
+        if (parts.Length < 2 || !double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var prev))
+            return false;
+        return Math.Abs(newUt1MinusUtc - prev) > maxJumpSeconds;
+    }
+
+    /// <summary>
+    /// Gate-before-activate: when a gate is provided, run it against the staged
+    /// version and only activate on pass — the previous version stays active on
+    /// failure (activation is a single row write; no rollback needed).
+    /// </summary>
+    internal static async Task<int> GateAndActivateAsync(
+        string datasetName, string version, Astronomy.SharedKernel.Datasets.IDatasetRegistry registry,
+        Func<string, Task<bool>>? gate, CancellationToken ct = default)
+    {
+        if (gate is not null && !await gate(version))
+        {
+            Console.WriteLine($"{datasetName}: GATE FAIL for {version} - not activated (previous version stays active)");
+            return 1;
+        }
+        await registry.ActivateAsync(datasetName, version, ct);
+        return 0;
+    }
 }

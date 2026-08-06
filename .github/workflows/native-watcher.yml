@@ -1,0 +1,45 @@
+name: native-watcher
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check native upstreams for newer versions
+        id: check
+        run: |
+          PINNED_ERFA=$(grep -oE '--branch v[0-9.]+' src/Astronomy.Api/Dockerfile | head -1 | sed 's/--branch //')
+          PINNED_CSPICE=$(grep -oE 'origin [0-9a-f]{40}' src/Astronomy.Api/Dockerfile | head -1 | awk '{print $2}')
+          LATEST_ERFA=$(git ls-remote --tags https://github.com/liberfa/erfa.git | grep -v '\^{}' | awk -F/ '{print $NF}' | sort -V | tail -1)
+          LATEST_CSPICE=$(git ls-remote https://github.com/arturania/cspice.git HEAD | awk '{print $1}')
+          echo "erfa: pinned=$PINNED_ERFA latest=$LATEST_ERFA"
+          echo "cspice: pinned=${PINNED_CSPICE:0:12} latest=${LATEST_CSPICE:0:12}"
+          echo "pinned_erfa=$PINNED_ERFA" >> "$GITHUB_OUTPUT"
+          echo "latest_erfa=$LATEST_ERFA" >> "$GITHUB_OUTPUT"
+          echo "pinned_cspice=$PINNED_CSPICE" >> "$GITHUB_OUTPUT"
+          echo "latest_cspice=$LATEST_CSPICE" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue when an upstream moved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ steps.check.outputs.latest_erfa }}" != "${{ steps.check.outputs.pinned_erfa }}" ] || \
+             [ "${{ steps.check.outputs.latest_cspice }}" != "${{ steps.check.outputs.pinned_cspice }}" ]; then
+            BODY="Native dependency update available:
+            - erfa: pinned ${{ steps.check.outputs.pinned_erfa }} -> latest ${{ steps.check.outputs.latest_erfa }}
+            - cspice fork: pinned ${{ steps.check.outputs.pinned_cspice }} -> latest ${{ steps.check.outputs.latest_cspice }}
+
+            Review and bump the Dockerfile pins deliberately (verify the SpiceZpr.h sed patch still applies)."
+            EXISTING=$(gh issue list --state open --search "in:title Native dependency update" --json number --jq 'length')
+            if [ "$EXISTING" -eq 0 ]; then
+              gh issue create --title "Native dependency update available (erfa/cspice)" --body "$BODY"
+            fi
+          else
+            echo "No newer native upstreams."
+          fi
