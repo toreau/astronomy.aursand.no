@@ -74,6 +74,7 @@ public class OmmIngestionTests
     public async Task StageFileAsync_TooFewRows_Rejected()
     {
         var db = TempDb();
+        SatelliteStore.EnsureSchema(db);
         try
         {
             var csv = Path.GetTempFileName();
@@ -100,6 +101,7 @@ public class OmmIngestionTests
     public async Task StageFileAsync_ValidRows_StagesAndActivates()
     {
         var db = TempDb();
+        SatelliteStore.EnsureSchema(db);
         try
         {
             var csv = Path.GetTempFileName();

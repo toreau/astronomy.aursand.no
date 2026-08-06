@@ -365,6 +365,18 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task AlmanacDaily_MoonPhaseName_WaxingSideIsCorrect()
+    {
+        // Regression: the illumination-based naming used to label the post-new-moon
+        // waxing crescent as "Waning Crescent" (phase angle ~180 at new, not 0).
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/almanac/daily?date=2026-08-15&latitude=59.9&longitude=10.7");
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("Waxing Crescent", doc.RootElement.GetProperty("moon").GetProperty("phaseName").GetString());
+    }
+
+    [Fact]
     public async Task CalendarRange_FullYear_Returns365Entries()
     {
         var client = _factory.CreateClient();

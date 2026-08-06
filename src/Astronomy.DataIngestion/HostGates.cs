@@ -652,7 +652,7 @@ public static class HostGates
         {
             var path = Path.Combine(kernelDir, name);
             var info = new FileInfo(path);
-            if (info.Exists && info.Length >= minBytes)
+            if (info.Exists && info.Length >= minBytes && MarkerMatches(path, info))
             {
                 Console.WriteLine($"naif: {name,-26} present, skipping ({info.Length} bytes)");
                 return true;
@@ -661,6 +661,7 @@ public static class HostGates
             {
                 var bytes = await hc.GetByteArrayAsync(url);
                 await File.WriteAllBytesAsync(path, bytes);
+                WriteMarker(path);
                 Console.WriteLine($"naif: {name,-26} {bytes.Length,10} bytes sha256={Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()}");
                 return true;
             }
@@ -677,7 +678,7 @@ public static class HostGates
         {
             var path = Path.Combine(kernelDir, name);
             var info = new FileInfo(path);
-            if (info.Exists && info.Length >= minBytes)
+            if (info.Exists && info.Length >= minBytes && MarkerMatches(path, info))
             {
                 Console.WriteLine($"naif: {name,-26} present, skipping ({info.Length} bytes)");
                 return true;
@@ -699,6 +700,7 @@ public static class HostGates
                     return false;
                 }
                 File.Move(tmp, path, overwrite: true);
+                WriteMarker(path);
                 Console.WriteLine($"naif: {name,-26} {new FileInfo(path).Length,10} bytes (streamed)");
                 return true;
             }
@@ -856,5 +858,37 @@ public static class HostGates
         if (gateExit == 0 && c04Exit == 0 && ommExit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
         return gateExit == 0 && c04Exit == 0 && ommExit == 0 && starExit == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Integrity marker ("&lt;length&gt; &lt;sha256-prefix&gt;") written after a successful
+    /// kernel download. The skip-if-present check requires a matching marker, so a
+    /// truncated-but-large file is re-downloaded instead of silently accepted.
+    /// </summary>
+    private static bool MarkerMatches(string path, FileInfo info)
+    {
+        var marker = path + ".size-sha";
+        if (!File.Exists(marker)) return false;
+        var parts = File.ReadAllText(marker).Trim().Split(' ');
+        if (parts.Length != 2 || !long.TryParse(parts[0], out var size) || size != info.Length) return false;
+        return parts[1] == Sha256Prefix(path);
+    }
+
+    private static void WriteMarker(string path) =>
+        File.WriteAllText(path + ".size-sha", $"{new FileInfo(path).Length} {Sha256Prefix(path)}");
+
+    private static string Sha256Prefix(string path)
+    {
+        const long hashCapBytes = 64L * 1024 * 1024;
+        using var stream = File.OpenRead(path);
+        var buffer = new byte[Math.Min(stream.Length, hashCapBytes)];
+        var read = 0;
+        while (read < buffer.Length)
+        {
+            var n = stream.Read(buffer, read, buffer.Length - read);
+            if (n == 0) break;
+            read += n;
+        }
+        return Convert.ToHexString(SHA256.HashData(buffer.AsSpan(0, read)))[..8].ToLowerInvariant();
     }
 }

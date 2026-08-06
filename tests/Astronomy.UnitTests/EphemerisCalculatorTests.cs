@@ -54,4 +54,46 @@ public class EphemerisCalculatorTests
         Assert.Equal("Full Moon", EphemerisCalculator.MoonPhaseName(2));
         Assert.Equal("Last Quarter", EphemerisCalculator.MoonPhaseName(3));
     }
+
+    [Fact]
+    public void MoonPhase01_Bands_NameCorrectly()
+    {
+        Assert.Equal("New Moon", EphemerisCalculator.MoonPhaseName(0.0));
+        Assert.Equal("New Moon", EphemerisCalculator.MoonPhaseName(0.98));
+        Assert.Equal("Waxing Crescent", EphemerisCalculator.MoonPhaseName(0.1));
+        Assert.Equal("First Quarter", EphemerisCalculator.MoonPhaseName(0.25));
+        Assert.Equal("Waxing Gibbous", EphemerisCalculator.MoonPhaseName(0.4));
+        Assert.Equal("Full Moon", EphemerisCalculator.MoonPhaseName(0.5));
+        Assert.Equal("Waning Gibbous", EphemerisCalculator.MoonPhaseName(0.6));
+        Assert.Equal("Last Quarter", EphemerisCalculator.MoonPhaseName(0.75));
+        Assert.Equal("Waning Crescent", EphemerisCalculator.MoonPhaseName(0.9));
+    }
+
+    [Theory]
+    [InlineData(2026, 8, 8, "Waning Crescent")]    // between last quarter (Aug 6) and new (Aug 12)
+    [InlineData(2026, 8, 9, "Waning Crescent")]
+    [InlineData(2026, 8, 13, "New Moon")]          // 18 h after new — still inside the new band
+    [InlineData(2026, 8, 15, "Waxing Crescent")]   // mid-way to first quarter
+    [InlineData(2026, 8, 22, "Waxing Gibbous")]    // after first quarter (Aug 20)
+    [InlineData(2026, 8, 23, "Waxing Gibbous")]
+    [InlineData(2026, 8, 29, "Full Moon")]         // 1.3 d after full (Aug 28) — inside the full band
+    [InlineData(2026, 8, 31, "Waning Gibbous")]    // waning toward last quarter (Sep 4)
+    public void MoonPhaseName_August2026_DaysMatchPhase(int year, int month, int day, string expected)
+    {
+        var calc = Calculator();
+        var utc = new DateTimeOffset(year, month, day, 12, 0, 0, TimeSpan.Zero);
+        Assert.Equal(expected, EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(utc)));
+    }
+
+    [Fact]
+    public void MoonPhaseName_QuarterInstants_2026()
+    {
+        var calc = Calculator();
+        // Quarter instants from the live /moon/phases (UTC): LQ Aug 6 02:21, New Aug 12 17:37,
+        // FQ Aug 20 02:46, Full Aug 28 04:19 — at noon UTC each day the phase is in-band.
+        Assert.Equal("Last Quarter", EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(new DateTimeOffset(2026, 8, 6, 12, 0, 0, TimeSpan.Zero))));
+        Assert.Equal("New Moon", EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(new DateTimeOffset(2026, 8, 12, 12, 0, 0, TimeSpan.Zero))));
+        Assert.Equal("First Quarter", EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(new DateTimeOffset(2026, 8, 20, 12, 0, 0, TimeSpan.Zero))));
+        Assert.Equal("Full Moon", EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(new DateTimeOffset(2026, 8, 28, 12, 0, 0, TimeSpan.Zero))));
+    }
 }

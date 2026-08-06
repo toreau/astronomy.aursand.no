@@ -77,4 +77,40 @@ public class JobsParsingTests
         Assert.NotNull(star);
         Assert.Equal("Sirius, the Dog Star", star.Value.ProperName);
     }
+
+    private static long NtpSeconds(DateTimeOffset utc) =>
+        (long)(utc - new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero)).TotalSeconds;
+
+    [Fact]
+    public void ParseLeapSecondsFile_ParsesModernIntegerEntries()
+    {
+        var text = string.Join('\n',
+            "# Updated 2026-01-01",
+            "#@ 4029379200",
+            "#$ leap-seconds.list",
+            $"{NtpSeconds(new DateTimeOffset(2017, 1, 1, 0, 0, 0, TimeSpan.Zero))}\t37\t# 1 Jan 2017",
+            $"{NtpSeconds(new DateTimeOffset(2015, 7, 1, 0, 0, 0, TimeSpan.Zero))}\t36\t# 1 Jul 2015",
+            $"{NtpSeconds(new DateTimeOffset(2012, 7, 1, 0, 0, 0, TimeSpan.Zero))}\t35\t# 1 Jul 2012",
+            $"{NtpSeconds(new DateTimeOffset(1972, 1, 1, 0, 0, 0, TimeSpan.Zero))}\t10\t# 1 Jan 1972");
+        var entries = Jobs.ParseLeapSecondsFile(text);
+        Assert.Equal(4, entries.Count);
+        // Parse preserves file order; the job sorts by effective date before use.
+        Assert.Equal(new DateTimeOffset(2017, 1, 1, 0, 0, 0, TimeSpan.Zero), entries[0].EffectiveUtc);
+        Assert.Equal(37, entries[0].TaiMinusUtc);
+        Assert.Equal(new DateTimeOffset(1972, 1, 1, 0, 0, 0, TimeSpan.Zero), entries[^1].EffectiveUtc);
+        Assert.Equal(10, entries[^1].TaiMinusUtc);
+    }
+
+    [Fact]
+    public void ParseLeapSecondsFile_DropsPre1972AndFractionalRows()
+    {
+        var text = string.Join('\n',
+            $"{NtpSeconds(new DateTimeOffset(1965, 1, 1, 0, 0, 0, TimeSpan.Zero))}\t3\t# pre-1972",
+            "1893456000\t1.4228180\t# 1961 rubber-seconds era (fractional)",
+            "not-a-number\t37\t# garbage",
+            $"{NtpSeconds(new DateTimeOffset(2017, 1, 1, 0, 0, 0, TimeSpan.Zero))}\t37\t# 1 Jan 2017");
+        var entries = Jobs.ParseLeapSecondsFile(text);
+        Assert.Single(entries);
+        Assert.Equal(37, entries[0].TaiMinusUtc);
+    }
 }

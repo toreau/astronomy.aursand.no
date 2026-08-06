@@ -115,9 +115,34 @@ public class SatelliteTests
         foreach (var pass in passes.Passes)
         {
             Assert.True(pass.RiseUtc < pass.MaxElevationUtc);
-            Assert.True(pass.MaxElevationUtc < pass.SetUtc);
+            // A pass in progress at window end may have max elevation exactly at the
+            // clamped set time.
+            Assert.True(pass.MaxElevationUtc <= pass.SetUtc);
             Assert.True(pass.MaxElevationDeg >= 10.0);
         }
+    }
+
+    [Fact]
+    public void Predict_PassStraddlingWindowEnd_IsIncludedWithClampedSet()
+    {
+        var propagator = new OneSgp4Propagator();
+        var elements = Iss();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var full = SatellitePassPredictor.Predict(propagator, elements,
+            elements.EpochUtc, elements.EpochUtc.AddHours(24), observer, 0.0, 10.0, 30.0);
+        Assert.NotEmpty(full);
+
+        // Window that ends 1 minute before the pass's real set time: the pass is
+        // still in progress at the window end and must be reported with a clamped set.
+        var from = full[0].RiseUtc.AddMinutes(-1);
+        var to = full[0].SetUtc.AddMinutes(-1);
+        var truncated = SatellitePassPredictor.Predict(propagator, elements,
+            from, to, observer, 0.0, 10.0, 30.0);
+        Assert.Single(truncated);
+        Assert.Equal(to, truncated[0].SetUtc);
+        Assert.True(Math.Abs((truncated[0].RiseUtc - full[0].RiseUtc).TotalSeconds) < 2);
+        Assert.True(truncated[0].RiseUtc < truncated[0].MaxElevationUtc);
+        Assert.True(truncated[0].MaxElevationUtc <= truncated[0].SetUtc);
     }
 
     [Fact]

@@ -88,7 +88,12 @@ public static class SatellitePassPredictor
             {
                 if (!crossings[j].Rising) { set = crossings[j].Time; break; }
             }
-            if (set is null) continue;
+            if (set is null)
+            {
+                // Pass still in progress when the window ends: report it with the
+                // set time clamped to the window end rather than dropping it.
+                set = to;
+            }
 
             // transit: max altitude over a fine rescan of the pass
             var best = rise.Time;

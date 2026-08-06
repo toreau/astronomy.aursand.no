@@ -68,7 +68,12 @@ switch (mode)
         return HostGates.CompareFixtures(args.Length > 1 ? args[1] : "/data/fixtures");
 
     case "sample":
-        return HostGates.SampleFixtures(args.Length > 1 ? args[1] : "/data/fixtures", args[2], int.Parse(args[3]));
+        if (args.Length < 4 || !int.TryParse(args[3], out var sampleCount))
+        {
+            Console.WriteLine("usage: sample <fixturesDir> <body> <count>");
+            return 1;
+        }
+        return HostGates.SampleFixtures(args.Length > 1 ? args[1] : "/data/fixtures", args[2], sampleCount);
 
     case "naif":
         return await HostGates.NaifAsync(args.Length > 1 ? args[1] : "/data/kernels");
@@ -115,6 +120,8 @@ async Task<int> DatasetCommandAsync(string[] args)
 async Task<int> IngestCommandAsync(string[] args)
 {
     if (args.Length < 1) { Console.WriteLine("usage: ingest <eop|eop-c04|leap-seconds|star-catalog>"); return 1; }
+    // Ensure the registry schema exists (the heartbeat normally creates it).
+    InfrastructureRegistrar.MigrateRegistry(dbPath);
     return args[0] switch
     {
         "eop" => await Jobs.RunEopJobAsync(dbPath, dataRoot),
@@ -128,8 +135,9 @@ async Task<int> IngestCommandAsync(string[] args)
 async Task<int> OmmCommandAsync(string[] args)
 {
     if (args.Length < 1) { Console.WriteLine("usage: omm <fetch|stage-file|activate|rollback|status|refresh> [version] [file]"); return 1; }
-    // Ensure the registry schema exists (the heartbeat normally creates it).
+    // Ensure the registry + satellite schema exist (the heartbeat normally creates them).
     InfrastructureRegistrar.MigrateRegistry(dbPath);
+    SatelliteStore.EnsureSchema(dbPath);
     var service = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
         .AddAstronomyInfrastructure(dbPath, dataRoot)
         .AddSatellitesModule(dbPath)

@@ -9,8 +9,13 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS cspice
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libc6-dev make tcsh meson ninja-build \
     && rm -rf /var/lib/apt/lists/*
+# Pinned to arturania/cspice 53bce32 (2026-08-06): the sed below removes the
+# commented prefix_c declaration at SpiceZpr.h:3252-3255, which must match this commit.
 RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/arturania/cspice.git /spice-src \
-    && cd /spice-src && git sparse-checkout set src include lib
+    && cd /spice-src \
+    && git fetch --depth 1 origin 53bce326267dd2d6d567de92b15869c9ed7d0629 \
+    && git checkout 53bce326267dd2d6d567de92b15869c9ed7d0629 \
+    && git sparse-checkout set src include lib
 WORKDIR /spice-src/src
 RUN mkdir -p ../lib ../exe \
     && sed -i '3252,3255d' ../include/SpiceZpr.h \
@@ -20,7 +25,7 @@ RUN gcc -shared -fPIC -o /libcspice.so \
         -Wl,--whole-archive /spice-src/lib/libcspice.a \
         -Wl,--no-whole-archive -lm
 
-RUN git clone --depth 1 https://github.com/liberfa/erfa.git /erfa-src \
+RUN git clone --depth 1 --branch v2.0.1 https://github.com/liberfa/erfa.git /erfa-src \
     && meson setup /erfa/build /erfa-src \
     && ninja -C /erfa/build \
     && find /erfa/build/src -name 'liberfa.so.1*' -exec cp {} /liberfa.so \;

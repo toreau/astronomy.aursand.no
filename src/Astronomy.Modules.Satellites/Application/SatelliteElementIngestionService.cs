@@ -16,7 +16,6 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
     {
         _dbPath = dbPath;
         _registry = registry;
-        SatelliteStore.EnsureSchema(dbPath);
     }
 
     public async Task<int> FetchAndStageAsync(string version, CancellationToken ct = default)

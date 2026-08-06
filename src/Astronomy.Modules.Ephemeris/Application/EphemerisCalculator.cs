@@ -97,6 +97,31 @@ internal sealed class EphemerisCalculator
         return (info.phase_fraction, info.phase_angle);
     }
 
+    /// <summary>
+    /// Continuous moon phase in [0,1): 0 = new, 0.25 = first quarter, 0.5 = full,
+    /// 0.75 = last quarter. (Phase angle alone cannot distinguish waxing/waning
+    /// for the Moon: it is ~0 at full and ~180 at new.)
+    /// </summary>
+    public double MoonPhase01(DateTimeOffset utc) => Astr.MoonPhase(new AstroTime(utc.UtcDateTime)) / 360.0;
+
+    /// <summary>Phase name from the continuous phase, 1/16-width bands.</summary>
+    public static string MoonPhaseName(double phase01)
+    {
+        phase01 %= 1.0;
+        if (phase01 < 0) phase01 += 1.0;
+        return phase01 switch
+        {
+            < 0.0625 or >= 0.9375 => "New Moon",
+            < 0.1875 => "Waxing Crescent",
+            < 0.3125 => "First Quarter",
+            < 0.4375 => "Waxing Gibbous",
+            < 0.5625 => "Full Moon",
+            < 0.6875 => "Waning Gibbous",
+            < 0.8125 => "Last Quarter",
+            _ => "Waning Crescent",
+        };
+    }
+
     public (double Fraction, double PhaseAngleDeg, double Magnitude) IlluminationFor(BodyId body, DateTimeOffset utc)
     {
         var info = Astr.Illumination(ToEngineBody(body), new AstroTime(utc.UtcDateTime));
@@ -136,12 +161,4 @@ internal sealed class EphemerisCalculator
         3 => "Last Quarter",
         _ => "Unknown",
     };
-
-    public static string MoonPhaseNameFromIllumination(double fraction, double phaseAngleDeg)
-    {
-        if (fraction < 0.03) return "New Moon";
-        if (fraction > 0.97) return "Full Moon";
-        if (Math.Abs(phaseAngleDeg) < 90) return fraction < 0.5 ? "Waxing Crescent" : "Waxing Gibbous";
-        return fraction < 0.5 ? "Waning Crescent" : "Waning Gibbous";
-    }
 }

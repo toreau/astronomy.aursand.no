@@ -13,6 +13,8 @@ public static class Jobs
 {
     private const string EopSourceUrl = "https://maia.usno.navy.mil/ser7/ser7.dat";
 
+    private const string LeapSecondsUrl = "https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list";
+
     private static readonly string[] EopC04CandidateUrls =
     {
         Environment.GetEnvironmentVariable("IERS_C04_URL") ?? "",
@@ -129,21 +131,79 @@ public static class Jobs
 
     public static async Task<int> RunLeapSecondsJobAsync(string dbPath, string dataRoot)
     {
-        var table = LeapSecondTable.Default;
-        var version = table.DatasetVersion;
+        using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+        string text;
+        try
+        {
+            text = await hc.GetStringAsync(LeapSecondsUrl);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"leap-seconds: fetch FAIL {ex.Message.Split('\n')[0]} (keeping current dataset)");
+            return 1;
+        }
+
+        var entries = ParseLeapSecondsFile(text).OrderBy(e => e.EffectiveUtc).ToList();
+        if (entries.Count < 20)
+        {
+            Console.WriteLine($"leap-seconds: REJECTED - only {entries.Count} entries parsed");
+            return 1;
+        }
+        for (var i = 1; i < entries.Count; i++)
+        {
+            if (entries[i].EffectiveUtc <= entries[i - 1].EffectiveUtc)
+            {
+                Console.WriteLine("leap-seconds: REJECTED - non-monotonic effective dates");
+                return 1;
+            }
+        }
+        if (entries[^1].TaiMinusUtc is < 36 or > 40)
+        {
+            Console.WriteLine($"leap-seconds: REJECTED - implausible latest TAI-UTC {entries[^1].TaiMinusUtc}");
+            return 1;
+        }
+
+        var version = DateTime.UtcNow.ToString("yyyyMMdd");
         var dir = Path.Combine(dataRoot, "datasets", "leap-seconds", version);
         Directory.CreateDirectory(dir);
         var csv = new List<string> { "effective_utc,tai_minus_utc" };
-        csv.AddRange(table.Entries.Select(e => $"{e.EffectiveUtc:yyyy-MM-ddTHH:mm:ssZ},{e.TaiMinusUtc}"));
+        csv.AddRange(entries.Select(e => $"{e.EffectiveUtc:yyyy-MM-ddTHH:mm:ssZ},{e.TaiMinusUtc}"));
         await File.WriteAllLinesAsync(Path.Combine(dir, "leap-seconds.csv"), csv);
         var checksum = Sha256(string.Join('\n', csv));
 
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
         await registry.StageAsync("leap-seconds", version, checksum);
         await registry.ActivateAsync("leap-seconds", version);
-        Console.WriteLine($"leap-seconds: {table.Entries.Count} entries staged+activated as {version}");
+        Console.WriteLine($"leap-seconds: {entries.Count} entries staged+activated as {version} (latest TAI-UTC {entries[^1].TaiMinusUtc})");
         return 0;
     }
+
+    /// <summary>
+    /// Parse the IERS NTP-format leap-seconds.list: comment lines '#', metadata
+    /// lines '#@'/'#$', data lines "&lt;ntp-seconds&gt; &lt;tai-utc&gt; # date".
+    /// Entries before 1972 (rubber-seconds era, fractional offsets) are dropped;
+    /// TAI-UTC is an integer from 1972 on.
+    /// </summary>
+    internal static List<LeapSecond> ParseLeapSecondsFile(string text)
+    {
+        var entries = new List<LeapSecond>();
+        var ntpEpoch = new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) continue;
+            if (!long.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var ntpSeconds)) continue;
+            if (!int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var taiMinusUtc)) continue;
+            var effective = ntpEpoch.AddSeconds(ntpSeconds);
+            if (effective < LeapSecondEraStart) continue;
+            entries.Add(new LeapSecond(effective, taiMinusUtc));
+        }
+        return entries;
+    }
+
+    private static readonly DateTimeOffset LeapSecondEraStart = new(1972, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     public static async Task<int> RunStarCatalogJobAsync(string dbPath, string dataRoot)
     {
@@ -223,9 +283,10 @@ public static class Jobs
     /// </summary>
     public static async Task<int> RunSatelliteElementsRefreshAsync(string dbPath, string dataRoot)
     {
-        // The registry schema is normally created by the heartbeat/API startup;
-        // ensure it exists so this job also works standalone on a fresh db.
+        // The registry + satellite schema are normally created by the heartbeat/API
+        // startup; ensure they exist so this job also works standalone on a fresh db.
         InfrastructureRegistrar.MigrateRegistry(dbPath);
+        SatelliteStore.EnsureSchema(dbPath);
         var service = new ServiceCollection()
             .AddAstronomyInfrastructure(dbPath, dataRoot)
             .AddSatellitesModule(dbPath)

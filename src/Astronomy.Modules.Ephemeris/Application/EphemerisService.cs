@@ -139,7 +139,7 @@ internal sealed class EphemerisService : IEphemerisService
     {
         var (fraction, phaseAngle) = _calculator.MoonIllumination(time);
         return Task.FromResult(new MoonIlluminationResult(
-            time, fraction, EphemerisCalculator.MoonPhaseNameFromIllumination(fraction, phaseAngle),
+            time, fraction, EphemerisCalculator.MoonPhaseName(_calculator.MoonPhase01(time)),
             Metadata(PrecisionMode.Consumer, "moon-illumination")));
     }
 
