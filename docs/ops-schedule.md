@@ -45,10 +45,24 @@ is the case that matters).
 
 | Layer | Mechanism | Manual? |
 |---|---|---|
-| NuGet packages | Dependabot, weekly grouped PRs gated by the CI suite (1,304 tests) | majors reviewed; patch/minor auto-merge policy per repo rules |
+| NuGet packages | Dependabot, weekly grouped PRs gated by the CI suite (1,310 tests) | majors reviewed; patch/minor auto-merge policy per repo rules |
 | .NET SDK | `global.json` pin (10.0.302, `latestFeature` roll-forward) | deliberate bump commit |
 | cspice fork / erfa | pinned in Dockerfiles; weekly `native-watcher` workflow opens an issue when upstreams move | deliberate bump + sed-patch verification |
 | tzdata | flows through NodaTime bumps (Dependabot) | as above |
+
+### Accuracy-critical engines (deliberate re-validation)
+
+`CosineKitty.AstronomyEngine` and `One_Sgp4` majors are deliberate re-validation
+events. Their claims (consumer tier ≤ 22.5″ vs Horizons, bit-exact Vallado
+SGP4) are pinned to the current versions, and updates to either arrive as
+standalone Dependabot PRs (own `astronomy-engines` group — never bundled).
+Before merging an update to either:
+
+1. Accuracy suite green (automatic in CI — 1,122 tests vs Horizons and
+   Vallado fixtures).
+2. Re-run `spikes/S12-live-verification/ephemeris.py` + `satellites.py`
+   against a local build of the candidate (`ASTRONOMY_API_BASE`).
+3. Record the outcome in the merge description.
 
 ## Verification
 

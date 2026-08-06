@@ -10,3 +10,10 @@ updates:
       astronomy-deps:
         patterns:
           - "*"
+        exclude-patterns:
+          - "CosineKitty.AstronomyEngine"
+          - "One_Sgp4"
+      astronomy-engines:
+        patterns:
+          - "CosineKitty.AstronomyEngine"
+          - "One_Sgp4"
