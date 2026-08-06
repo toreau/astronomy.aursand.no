@@ -256,4 +256,22 @@ public class StarTests
         Assert.Equal("Ursa Minor", StarService.ConstellationName("UMi"));
         Assert.Equal("UnknownX", StarService.ConstellationName("UnknownX"));
     }
+
+    [Fact]
+    public void SearchByName_EmptyQuery_ReturnsNothing()
+    {
+        var catalog = Catalog(Sample);
+        Assert.Empty(catalog.SearchByName(""));
+        Assert.Empty(catalog.SearchByName("   "));
+    }
+
+    [Fact]
+    public void Catalog_DuplicateHip_FirstWins()
+    {
+        var duplicate = new StarRecord("32349", "Sirius Duplicate", "", "", "", "CMa",
+            Sirius.RaDeg, Sirius.DecDeg, 0, 0, 8.6, 5.0, "K0V");
+        var catalog = new StarCatalog([Sirius, duplicate], "v38", "ok");
+        Assert.True(catalog.TryGetByHip("32349", out var star));
+        Assert.Equal("Sirius", star.ProperName);
+    }
 }

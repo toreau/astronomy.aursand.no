@@ -14,4 +14,13 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore Astronomy.slnx
       - run: dotnet build Astronomy.slnx -c Release --no-restore
-      - run: dotnet test Astronomy.slnx -c Release --no-build
+      - run: dotnet test Astronomy.slnx -c Release --no-build --collect:"XPlat Code Coverage" --results-directory coverage-results
+      - name: Summarize coverage
+        run: |
+          echo "Coverage per project (line rate):"
+          grep -h 'line-rate=' coverage-results/*/*/coverage.cobertura.xml | sed 's/.*line-rate="\([^"]*\)".*/  \1/'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: coverage-results/**/coverage.cobertura.xml
+          if-no-files-found: error

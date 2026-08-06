@@ -113,4 +113,57 @@ public class JobsParsingTests
         Assert.Single(entries);
         Assert.Equal(37, entries[0].TaiMinusUtc);
     }
+
+    [Fact]
+    public void ParseSer7Line_ValidLine_ReturnsSample()
+    {
+        var sample = Jobs.ParseSer7Line("60814.0    0.3660000   0.0000000");
+        Assert.NotNull(sample);
+        Assert.Equal(60814.0, sample.Value.Mjd, 3);
+        Assert.Equal(0.366, sample.Value.Ut1MinusUtc, 6);
+    }
+
+    [Fact]
+    public void ParseSer7Line_MalformedOrShortLines_ReturnNull()
+    {
+        Assert.Null(Jobs.ParseSer7Line(""));
+        Assert.Null(Jobs.ParseSer7Line("60814.0"));                       // one field
+        Assert.Null(Jobs.ParseSer7Line("not-a-number 0.366"));            // bad mjd
+        Assert.Null(Jobs.ParseSer7Line("60814.0 not-a-number"));          // bad dut1
+        Assert.Null(Jobs.ParseSer7Line("# comment line"));
+    }
+
+    [Fact]
+    public void ParseEopC04Line_ValidLine_ReturnsSampleWithPolarMotion()
+    {
+        // IERS C04 text format: year month day MJD x y UT1-UTC ...
+        var sample = Jobs.ParseEopC04Line("2026 08 06 60814.000 0.123456 0.456789 0.3660000 0.1 0.2");
+        Assert.NotNull(sample);
+        Assert.Equal(60814.0, sample.Value.Mjd, 3);
+        Assert.Equal(0.366, sample.Value.Ut1MinusUtc, 6);
+        Assert.Equal(0.123456, sample.Value.X, 6);
+        Assert.Equal(0.456789, sample.Value.Y, 6);
+    }
+
+    [Fact]
+    public void ParseEopC04Line_ShortLine_PolarMotionDefaultsToZero()
+    {
+        // Fewer than 8 fields: x/y are not present and default to zero.
+        var sample = Jobs.ParseEopC04Line("2026 08 06 60814.000 0.123456 0.456789 0.3660000");
+        Assert.NotNull(sample);
+        Assert.Equal(0.366, sample.Value.Ut1MinusUtc, 6);
+        Assert.Equal(0.0, sample.Value.X, 6);
+        Assert.Equal(0.0, sample.Value.Y, 6);
+    }
+
+    [Fact]
+    public void ParseEopC04Line_OutOfEraOrMalformed_ReturnNull()
+    {
+        Assert.Null(Jobs.ParseEopC04Line("1969 08 06 60814.000 0.123456 0.456789 0.3660000")); // year < 1970
+        Assert.Null(Jobs.ParseEopC04Line("2101 08 06 60814.000 0.123456 0.456789 0.3660000")); // year > 2100
+        Assert.Null(Jobs.ParseEopC04Line("2026 08 06 39999.000 0.123456 0.456789 0.3660000")); // mjd < 40000
+        Assert.Null(Jobs.ParseEopC04Line("2026 08 06 80001.000 0.123456 0.456789 0.3660000")); // mjd > 80000
+        Assert.Null(Jobs.ParseEopC04Line("2026 08 06"));                                        // too short
+        Assert.Null(Jobs.ParseEopC04Line("2026 08 06 60814.000 0.123456 0.456789 x"));          // bad dut1
+    }
 }

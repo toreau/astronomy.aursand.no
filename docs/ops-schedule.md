@@ -45,7 +45,7 @@ is the case that matters).
 
 | Layer | Mechanism | Manual? |
 |---|---|---|
-| NuGet packages | Dependabot, weekly grouped PRs gated by the CI suite (1,310 tests) | majors reviewed; patch/minor auto-merge policy per repo rules |
+| NuGet packages | Dependabot, weekly grouped PRs gated by the CI suite (1,366 tests) | majors reviewed; patch/minor auto-merge policy per repo rules |
 | .NET SDK | `global.json` pin (10.0.302, `latestFeature` roll-forward) | deliberate bump commit |
 | cspice fork / erfa | pinned in Dockerfiles; weekly `native-watcher` workflow opens an issue when upstreams move | deliberate bump + sed-patch verification |
 | tzdata | flows through NodaTime bumps (Dependabot) | as above |

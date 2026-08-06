@@ -155,6 +155,125 @@ public class SatelliteTests
     }
 
     [Fact]
+    public async Task GetPasses_MinElevationOutOfRange_Throws()
+    {
+        var service = ServiceWithElements();
+        await Assert.ThrowsAsync<ArgumentException>(() => service.GetPassesAsync("25544",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddHours(1),
+            ObserverLocation.FromDegrees(59.9, 10.7, 0), 200.0, 30.0, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetPasses_StepSecondsOutOfRange_Throws()
+    {
+        var service = ServiceWithElements();
+        await Assert.ThrowsAsync<ArgumentException>(() => service.GetPassesAsync("25544",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddHours(1),
+            ObserverLocation.FromDegrees(59.9, 10.7, 0), 10.0, 500.0, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetStatus_ReturnsActiveVersionAndCount()
+    {
+        var service = ServiceWithElements();
+        var status = await service.GetStatusAsync(CancellationToken.None);
+        Assert.Equal("test", status.ActiveVersion);
+        Assert.Equal(22, status.ElementCount); // iss-stations-omm.csv fixture
+    }
+
+    [Fact]
+    public async Task GetPosition_StaleTle_WarnsAst7004()
+    {
+        var db = Path.Combine(Path.GetTempPath(), $"sat-stale-{Guid.NewGuid():N}.db");
+        try
+        {
+            SatelliteStore.EnsureSchema(db);
+            var stale = Iss() with { EpochUtc = DateTimeOffset.UtcNow.AddDays(-5) };
+            SatelliteStore.WriteElements(db, "test", [stale]);
+            var service = new SatelliteService(db, new StubSatelliteRegistry(),
+                new TimeScaleConverter(LeapSecondTable.Default, []));
+            var result = await service.GetPositionAsync("25544", DateTimeOffset.UtcNow,
+                ObserverLocation.FromDegrees(59.9, 10.7, 0), false, CancellationToken.None);
+            Assert.Contains(result.Metadata.Warnings, w => w.Code == "AST-7004");
+        }
+        finally
+        {
+            foreach (var f in new[] { db, db + "-wal", db + "-shm" })
+                try { File.Delete(f); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task Search_EmptyQuery_ReturnsAll()
+    {
+        var service = ServiceWithElements();
+        var results = await service.SearchAsync("", CancellationToken.None);
+        Assert.NotEmpty(results);
+    }
+
+    [Fact]
+    public async Task GetPosition_WithoutEopData_StillWorks()
+    {
+        // No eop-ut1 dataset: UT1 falls back to UTC (~0.366 s effect is sub-arcsecond).
+        var db = Path.Combine(Path.GetTempPath(), $"sat-noeop-{Guid.NewGuid():N}.db");
+        try
+        {
+            SatelliteStore.EnsureSchema(db);
+            SatelliteStore.WriteElements(db, "test", [Iss()]);
+            var service = new SatelliteService(db, new StubSatelliteRegistry(),
+                new TimeScaleConverter(LeapSecondTable.Default, []));
+            var result = await service.GetPositionAsync("25544", DateTimeOffset.UtcNow,
+                ObserverLocation.FromDegrees(59.9, 10.7, 0), false, CancellationToken.None);
+            Assert.InRange(result.AltitudeDeg, -90, 90);
+        }
+        finally
+        {
+            foreach (var f in new[] { db, db + "-wal", db + "-shm" })
+                try { File.Delete(f); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Predict_EmptyWindow_ReturnsEmpty()
+    {
+        var propagator = new OneSgp4Propagator();
+        var t = Iss().EpochUtc;
+        var passes = SatellitePassPredictor.Predict(propagator, Iss(), t, t,
+            ObserverLocation.FromDegrees(59.9, 10.7, 0), 0.0, 10.0, 30.0);
+        Assert.Empty(passes);
+    }
+
+    [Fact]
+    public void Predict_ConstantBelowHorizon_NoPasses()
+    {
+        // A propagator that never leaves the ground: no crossings, no passes.
+        var passes = SatellitePassPredictor.Predict(
+            _ => new TemeVector(0, 0, 0),
+            Iss().EpochUtc, Iss().EpochUtc.AddHours(24),
+            ObserverLocation.FromDegrees(59.9, 10.7, 0), 0.0, 10.0, 30.0);
+        Assert.Empty(passes);
+    }
+
+    [Fact]
+    public void Predict_WindowStartingMidPass_NoPassReported()
+    {
+        // Documented behavior: passes are detected via horizon crossings, so a pass
+        // already in progress at the window start is not reported (asymmetric with
+        // the end-of-window clamp). Candidate for a future fix.
+        var propagator = new OneSgp4Propagator();
+        var elements = Iss();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var full = SatellitePassPredictor.Predict(propagator, elements,
+            elements.EpochUtc, elements.EpochUtc.AddHours(24), observer, 0.0, 10.0, 30.0);
+        Assert.NotEmpty(full);
+        var from = full[0].RiseUtc.AddMinutes(2);
+        var to = full[0].SetUtc.AddMinutes(-2);
+        var mid = SatellitePassPredictor.Predict(propagator, elements,
+            from, to, observer, 0.0, 10.0, 30.0);
+        Assert.Empty(mid);
+    }
+
+    [Fact]
     public async Task Search_FindsIssByName()
     {
         var service = ServiceWithElements();

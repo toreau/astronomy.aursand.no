@@ -78,4 +78,29 @@ public class SatelliteStoreTests : IDisposable
         Assert.Equal(15.5, read[0].MeanMotion, 9);
         Assert.Equal(0.0007, read[0].Eccentricity, 9);
     }
+
+    [Fact]
+    public void Freshness_BucketBoundaries()
+    {
+        var now = new DateTimeOffset(2026, 8, 6, 12, 0, 0, TimeSpan.Zero);
+        var rows = new[]
+        {
+            RowAt(now.AddHours(-23.9)),  // fresh
+            RowAt(now.AddHours(-24.1)),  // warn
+            RowAt(now.AddHours(-72.0)),  // degraded (boundary exclusive at 72)
+            RowAt(now.AddHours(-72.1)),  // degraded
+            RowAt(now.AddHours(-168.0)), // refuse (boundary exclusive at 168)
+            RowAt(now.AddHours(-168.1)), // refuse
+        };
+        var (fresh, warn, degraded, refuse) = SatelliteStore.Freshness(rows, now);
+        Assert.Equal(1, fresh);
+        Assert.Equal(1, warn);
+        Assert.Equal(2, degraded);
+        Assert.Equal(2, refuse);
+    }
+
+    private static OrbitalElementRow RowAt(DateTimeOffset epoch) => new(
+        "ISS (ZARYA)", "25544", epoch,
+        15.5, 0.0007, 51.6, 64.4, 9.2, 350.8,
+        0.0001, 0.00007, 0, 57913);
 }

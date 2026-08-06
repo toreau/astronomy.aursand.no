@@ -144,4 +144,49 @@ public class EphemerisCalculatorTests
         Assert.True(Math.Abs(alt - geocentric.altitude) < 0.01, $"sun alt moved {alt - geocentric.altitude:F4} deg");
         Assert.True(Math.Abs(az - geocentric.azimuth) < 0.01, $"sun az moved {az - geocentric.azimuth:F4} deg");
     }
+
+    [Fact]
+    public void IlluminationFor_Sun_MagAboutMinus26()
+    {
+        var calc = Calculator();
+        var (fraction, _, magnitude) = calc.IlluminationFor(BodyId.Sun,
+            new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero));
+        Assert.InRange(magnitude, -27.0, -25.0);
+        Assert.InRange(fraction, 0.0, 1.0);
+    }
+
+    [Fact]
+    public void MoonIllumination_ReturnsFractionAndAngleBands()
+    {
+        var calc = Calculator();
+        var (fraction, angle) = calc.MoonIllumination(new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero));
+        Assert.InRange(fraction, 0.0, 1.0);
+        Assert.InRange(angle, 0.0, 180.0);
+    }
+
+    [Fact]
+    public void NextRelativeLongitude_Mars2026_ReturnsJanuarySuperiorConjunction()
+    {
+        var calc = Calculator();
+        // Engine convention: Sun-centric relative longitude, 180 = superior
+        // conjunction for outer planets (0 = opposition).
+        var found = calc.NextRelativeLongitude(BodyId.Mars, 180.0,
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        Assert.NotNull(found);
+        // Mars solar conjunction 2026-01-09 (live-verified against the events endpoint).
+        Assert.True(Math.Abs((found!.Value - new DateTimeOffset(2026, 1, 9, 0, 0, 0, TimeSpan.Zero)).TotalDays) < 2,
+            $"mars superior conjunction {found.Value:O}");
+    }
+
+    [Fact]
+    public void NextMaxElongation_Venus2026_ReturnsAugustDate()
+    {
+        var calc = Calculator();
+        var found = calc.NextMaxElongation(BodyId.Venus,
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        Assert.NotNull(found);
+        // Venus max elongation 2026-08-15 (live-verified).
+        Assert.True(Math.Abs((found!.Value - new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero)).TotalDays) < 2,
+            $"venus max elong {found.Value:O}");
+    }
 }

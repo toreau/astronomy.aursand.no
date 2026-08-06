@@ -429,6 +429,106 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
     }
 
+    [Fact]
+    public async Task Twilight_AllTypes_OsloWinter_ReturnsBeginAndEnd()
+    {
+        var client = _factory.CreateClient();
+        foreach (var type in new[] { "civil", "nautical", "astronomical" })
+        {
+            var body = await client.GetStringAsync(
+                $"/api/v1/ephemeris/twilight?date=2026-12-15&latitude=59.9&longitude=10.7&type={type}");
+            using var doc = JsonDocument.Parse(body);
+            Assert.NotEqual(JsonValueKind.Null, doc.RootElement.GetProperty("beginUtc").ValueKind);
+            Assert.NotEqual(JsonValueKind.Null, doc.RootElement.GetProperty("endUtc").ValueKind);
+        }
+    }
+
+    [Fact]
+    public async Task MoonPhases_ReturnsQuarterEvents()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/ephemeris/moon/phases?from=2026-08-01T00:00:00Z&to=2026-09-01T00:00:00Z");
+        using var doc = JsonDocument.Parse(body);
+        var events = doc.RootElement.GetProperty("events");
+        Assert.InRange(events.GetArrayLength(), 3, 5);
+        foreach (var e in events.EnumerateArray())
+        {
+            Assert.False(string.IsNullOrEmpty(e.GetProperty("phase").GetString()));
+            Assert.NotEqual(JsonValueKind.Null, e.GetProperty("utc").ValueKind);
+        }
+    }
+
+    [Fact]
+    public async Task Events_JupiterOpposition_2026()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/ephemeris/events?from=2026-01-01T00:00:00Z&to=2026-01-31T00:00:00Z&bodies=jupiter&types=opposition");
+        using var doc = JsonDocument.Parse(body);
+        var events = doc.RootElement.GetProperty("events");
+        Assert.True(events.GetArrayLength() >= 1);
+        Assert.Contains(events.EnumerateArray(),
+            e => e.GetProperty("type").GetString() == "opposition");
+    }
+
+    [Fact]
+    public async Task Visibility_Venus_ReturnsFields()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/ephemeris/venus/visibility?time=2026-08-15T12:00:00Z&latitude=59.9&longitude=10.7");
+        using var doc = JsonDocument.Parse(body);
+        var r = doc.RootElement;
+        Assert.InRange(r.GetProperty("magnitude").GetDouble(), -5.0, -3.0);
+        Assert.InRange(r.GetProperty("elongationDeg").GetDouble(), 35.0, 55.0);
+        Assert.False(string.IsNullOrEmpty(r.GetProperty("constellation").GetString()));
+    }
+
+    [Fact]
+    public async Task AlmanacMonthly_ReturnsDaysAndEvents()
+    {
+        var client = _factory.CreateClient();
+        var body = await client.GetStringAsync(
+            "/api/v1/almanac/monthly?month=2026-08&latitude=59.9&longitude=10.7");
+        using var doc = JsonDocument.Parse(body);
+        var days = doc.RootElement.GetProperty("days");
+        Assert.Equal(31, days.GetArrayLength());
+        Assert.Equal(JsonValueKind.Array, doc.RootElement.GetProperty("events").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/ephemeris/sun/position?time=2026-08-15T12:00:00Z&precision=ultra")]
+    [InlineData("/api/v1/ephemeris/sun/position?time=2026-08-15T12:00:00Z&frame=galactic")]
+    [InlineData("/api/v1/ephemeris/sun/position?time=2026-08-15T12:00:00Z&refraction=heavy")]
+    [InlineData("/api/v1/ephemeris/twilight?date=2026-12-15&latitude=59.9&longitude=10.7&type=party")]
+    [InlineData("/api/v1/ephemeris/events?from=2026-01-01T00:00:00Z&to=2026-01-31T00:00:00Z&types=supernova")]
+    [InlineData("/api/v1/ephemeris/events?from=2026-01-01T00:00:00Z&to=2026-01-31T00:00:00Z&bodies=pluto")]
+    [InlineData("/api/v1/almanac/monthly?month=2026-13&latitude=59.9&longitude=10.7")]
+    [InlineData("/api/v1/satellites/25544/passes?date=2026-08-15&latitude=59.9&longitude=10.7&stepSeconds=500")]
+    public async Task InvalidParameters_Return400(string url)
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(url);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("AST-4001", await response.Content.ReadAsStringAsync());
+    }
+
+    [Theory]
+    [InlineData("/api/v1/ephemeris/twilight?date=2026-12-15&latitude=59.9&longitude=10.7&type=civil", "public, max-age=900")]
+    [InlineData("/api/v1/ephemeris/moon/phases?from=2026-08-01T00:00:00Z&to=2026-09-01T00:00:00Z", "public, max-age=3600")]
+    [InlineData("/api/v1/ephemeris/sun/rise-set?date=2026-08-15&latitude=59.9&longitude=10.7", "public, max-age=900")]
+    [InlineData("/api/v1/calendars/range?from=2026-08-01&to=2026-08-03", "public, max-age=3600")]
+    [InlineData("/api/v1/satellites/status", "public, max-age=60")]
+    [InlineData("/api/v1/almanac/monthly?month=2026-08&latitude=59.9&longitude=10.7", "public, max-age=900")]
+    public async Task CachedEndpoints_SetCacheControl(string url, string expected)
+    {
+        var client = _factory.CreateClient();
+        var response = await client.GetAsync(url);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expected, response.Headers.CacheControl?.ToString());
+    }
+
     public sealed record SunPositionResponse(string Body, double RightAscensionDeg, double DeclinationDeg, double? AltitudeDeg, double? AzimuthDeg, double DistanceKm);
 
     public sealed record JulianDateResponse(double JulianDate, double ModifiedJulianDate, string Utc);

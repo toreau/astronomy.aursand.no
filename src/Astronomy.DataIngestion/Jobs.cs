@@ -29,11 +29,7 @@ public static class Jobs
         var samples = new List<(double Mjd, double Ut1MinusUtc)>();
         foreach (var line in text.Split('\n'))
         {
-            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 2) continue;
-            if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) continue;
-            if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) continue;
-            samples.Add((mjd, dut1));
+            if (ParseSer7Line(line) is { } sample) samples.Add(sample);
         }
         if (samples.Count < 100)
         {
@@ -94,18 +90,7 @@ public static class Jobs
         var samples = new List<(double Mjd, double Ut1MinusUtc, double X, double Y)>();
         foreach (var line in text.Split('\n'))
         {
-            var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length < 7) continue;
-            if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var year)) continue;
-            if (year is < 1970 or > 2100) continue;
-            if (!double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) continue;
-            if (mjd is < 40000 or > 80000) continue;
-            if (!double.TryParse(parts[6], NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) continue;
-            var x = 0.0;
-            var y = 0.0;
-            if (parts.Length > 7 && double.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var xv)) x = xv;
-            if (parts.Length > 8 && double.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var yv)) y = yv;
-            samples.Add((mjd, dut1, x, y));
+            if (ParseEopC04Line(line) is { } sample) samples.Add(sample);
         }
         if (samples.Count < 1000)
         {
@@ -188,6 +173,40 @@ public static class Jobs
         await registry.ActivateAsync("leap-seconds", version);
         Console.WriteLine($"leap-seconds: {entries.Count} entries staged+activated as {version} (latest TAI-UTC {entries[^1].TaiMinusUtc})");
         return 0;
+    }
+
+    /// <summary>
+    /// Parse one IERS Bulletin A ser7 line ("MJD UT1-UTC ..."); non-data or
+    /// malformed lines return null.
+    /// </summary>
+    internal static (double Mjd, double Ut1MinusUtc)? ParseSer7Line(string line)
+    {
+        var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) return null;
+        if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) return null;
+        if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) return null;
+        return (mjd, dut1);
+    }
+
+    /// <summary>
+    /// Parse one IERS C04 data line ("year month day MJD x y UT1-UTC ..."); lines
+    /// outside the validated era (year 1970-2100, MJD 40000-80000) or malformed
+    /// lines return null. x/y are optional.
+    /// </summary>
+    internal static (double Mjd, double Ut1MinusUtc, double X, double Y)? ParseEopC04Line(string line)
+    {
+        var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 7) return null;
+        if (!int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var year)) return null;
+        if (year is < 1970 or > 2100) return null;
+        if (!double.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) return null;
+        if (mjd is < 40000 or > 80000) return null;
+        if (!double.TryParse(parts[6], NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) return null;
+        var x = 0.0;
+        var y = 0.0;
+        if (parts.Length > 7 && double.TryParse(parts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out var xv)) x = xv;
+        if (parts.Length > 8 && double.TryParse(parts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out var yv)) y = yv;
+        return (mjd, dut1, x, y);
     }
 
     /// <summary>

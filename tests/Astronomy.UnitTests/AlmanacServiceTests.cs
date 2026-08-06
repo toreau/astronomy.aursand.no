@@ -59,6 +59,34 @@ public class AlmanacServiceTests
         Assert.All(result.Months, m => Assert.NotNull(m.Events));
     }
 
+    [Fact]
+    public async Task GetDailyAsync_AssemblesSections()
+    {
+        var ephemeris = new FakeEphemeris();
+        var result = await Service(ephemeris).GetDailyAsync(
+            new DailyAlmanacRequest(new DateOnly(2026, 8, 15), 59.9, 10.7, 0, "consumer"),
+            CancellationToken.None);
+
+        Assert.Equal("2026-08-15", result.Date);
+        Assert.NotNull(result.Sun);
+        Assert.NotNull(result.Moon);
+        Assert.Equal(7, result.Planets.Count);
+        Assert.All(result.Planets, p => Assert.False(string.IsNullOrEmpty(p.Body)));
+        Assert.NotNull(result.Metadata);
+    }
+
+    [Fact]
+    public async Task GetDailyAsync_ReferencePrecision_PassesThrough()
+    {
+        // The fake accepts any precision; a reference-precision daily request must
+        // not throw and must produce sections.
+        var ephemeris = new FakeEphemeris();
+        var result = await Service(ephemeris).GetDailyAsync(
+            new DailyAlmanacRequest(new DateOnly(2026, 8, 15), 59.9, 10.7, 0, "reference"),
+            CancellationToken.None);
+        Assert.Equal(7, result.Planets.Count);
+    }
+
     /// <summary>Deterministic stand-in for IEphemerisService (engine-free, fast).
     /// Thread-safe: the almanac computes months/days concurrently.</summary>
     private sealed class FakeEphemeris : IEphemerisService
