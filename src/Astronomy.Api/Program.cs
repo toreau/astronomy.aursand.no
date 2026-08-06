@@ -34,6 +34,9 @@ catch (Exception ex)
 }
 
 builder.Services.AddAstronomyInfrastructure(dbPath, dataRoot);
+builder.Services.ConfigureHttpJsonOptions(o =>
+    o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(
+        System.Text.Json.JsonNamingPolicy.CamelCase)));
 builder.Services.AddMemoryCache();
 builder.Services.AddOutputCache();
 builder.Services.AddResponseCompression();

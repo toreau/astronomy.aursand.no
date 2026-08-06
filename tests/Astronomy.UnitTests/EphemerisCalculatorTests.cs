@@ -189,4 +189,47 @@ public class EphemerisCalculatorTests
         Assert.True(Math.Abs((found!.Value - new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero)).TotalDays) < 2,
             $"venus max elong {found.Value:O}");
     }
+
+    [Fact]
+    public void SearchTwilight_Singapore_ReturnsLocalDayPair()
+    {
+        // Regression for the UTC-date-line wrap: at UTC+8 the local night spans two
+        // UTC dates, so begin must be the PREVIOUS UTC day's morning (05:53 SGT = 21:53 UTC
+        // the day before), not the next local morning. End is the evening of the local day.
+        var calc = Calculator();
+        var observer = ObserverLocation.FromDegrees(1.35, 103.82, 0);
+        var (begin, end) = calc.SearchTwilight(new DateOnly(2026, 8, 15), observer, -18.0);
+        Assert.NotNull(begin);
+        Assert.NotNull(end);
+        Assert.True(Math.Abs((begin!.Value - new DateTimeOffset(2026, 8, 14, 21, 53, 30, TimeSpan.Zero)).TotalSeconds) < 120,
+            $"begin {begin.Value:O}");
+        Assert.True(Math.Abs((end!.Value - new DateTimeOffset(2026, 8, 15, 12, 24, 55, TimeSpan.Zero)).TotalSeconds) < 120,
+            $"end {end.Value:O}");
+        Assert.True(begin < end);
+    }
+
+    [Fact]
+    public void SearchTwilight_OsloAugust_AstronomicalNullCivilPresent()
+    {
+        var calc = Calculator();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var (astroBegin, astroEnd) = calc.SearchTwilight(new DateOnly(2026, 8, 15), observer, -18.0);
+        var (civilBegin, civilEnd) = calc.SearchTwilight(new DateOnly(2026, 8, 15), observer, -6.0);
+        Assert.Null(astroBegin);
+        Assert.Null(astroEnd);
+        Assert.NotNull(civilBegin);
+        Assert.NotNull(civilEnd);
+    }
+
+    [Fact]
+    public void SearchTwilight_OsloDecember_AllTypesPresent()
+    {
+        var calc = Calculator();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var (astroBegin, astroEnd) = calc.SearchTwilight(new DateOnly(2026, 12, 15), observer, -18.0);
+        var (civilBegin, _) = calc.SearchTwilight(new DateOnly(2026, 12, 15), observer, -6.0);
+        Assert.NotNull(astroBegin);
+        Assert.NotNull(astroEnd);
+        Assert.NotNull(civilBegin);
+    }
 }

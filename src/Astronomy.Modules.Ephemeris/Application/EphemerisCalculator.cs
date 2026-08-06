@@ -84,6 +84,54 @@ internal sealed class EphemerisCalculator
         return found?.ToUtcDateTime();
     }
 
+    /// <summary>
+    /// Twilight begin/end for the observer's LOCAL day at the given date: enumerate
+    /// all crossings of the altitude over [date 00:00 UTC - 24h, +48h], then pair
+    /// the rising crossing just before local solar noon (12:00 UTC - lon/15h) with
+    /// the setting crossing just after it. Anchoring to local noon avoids the
+    /// UTC-date-line wrap for observers far from UTC (the local night spans two
+    /// UTC dates east of UTC). Returns nulls when the sun never reaches the
+    /// altitude that day (polar cases).
+    /// </summary>
+    public (DateTimeOffset? BeginUtc, DateTimeOffset? EndUtc) SearchTwilight(
+        DateOnly date, ObserverLocation observer, double altitudeDeg)
+    {
+        var engineObserver = new Observer(observer.Latitude.Degrees, observer.Longitude.Degrees, observer.ElevationMeters);
+        var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc), TimeSpan.Zero);
+        var windowStart = dayStart.AddHours(-24);
+        var windowEnd = dayStart.AddHours(48);
+        var localNoon = dayStart.AddHours(12).AddHours(-observer.Longitude.Degrees / 15.0);
+
+        var crossings = new List<(DateTimeOffset Time, bool Rising)>();
+        var direction = Direction.Rise;
+        var t = windowStart;
+        while (t < windowEnd)
+        {
+            var found = Astr.SearchAltitude(Body.Sun, engineObserver, direction,
+                new AstroTime(t.UtcDateTime), 1.5, altitudeDeg);
+            if (found is null || found.ToUtcDateTime() > windowEnd) break;
+            crossings.Add((found.ToUtcDateTime(), direction == Direction.Rise));
+            direction = direction == Direction.Rise ? Direction.Set : Direction.Rise;
+            t = found.ToUtcDateTime().AddMinutes(1);
+        }
+
+        DateTimeOffset? begin = null;
+        DateTimeOffset? end = null;
+        foreach (var (time, rising) in crossings)
+        {
+            if (time < localNoon)
+            {
+                if (rising) begin = time;
+            }
+            else if (!rising)
+            {
+                end = time;
+                break;
+            }
+        }
+        return (begin, end);
+    }
+
     public List<(DateTimeOffset Utc, int Quarter)> MoonQuarters(DateTimeOffset from, DateTimeOffset to)
     {
         var result = new List<(DateTimeOffset, int)>();

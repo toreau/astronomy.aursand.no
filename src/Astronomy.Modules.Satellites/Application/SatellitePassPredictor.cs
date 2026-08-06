@@ -50,6 +50,7 @@ public static class SatellitePassPredictor
         var crossings = new List<(DateTimeOffset Time, bool Rising)>();
         var previous = AltAt(from);
         var previousAbove = previous >= minElevationDeg;
+        var startsAbove = previousAbove;
         var t = from;
         var step = TimeSpan.FromSeconds(stepSeconds);
         while (t < to)
@@ -79,7 +80,27 @@ public static class SatellitePassPredictor
         }
 
         var passes = new List<SatellitePass>();
-        for (var i = 0; i < crossings.Count; i++)
+        var startIndex = 0;
+        if (startsAbove && crossings.Count > 0 && !crossings[0].Rising)
+        {
+            // A pass already in progress when the window starts: report it with
+            // the rise time clamped to the window start (mirror of the
+            // end-of-window clamp below).
+            var set = crossings[0].Time;
+            var best = from;
+            var bestAlt = double.MinValue;
+            var fineStep = TimeSpan.FromSeconds(Math.Max(10, Math.Min(stepSeconds, 60)));
+            for (var ft = from; ft <= set; ft += fineStep)
+            {
+                var alt = AltAt(ft);
+                if (alt > bestAlt) { bestAlt = alt; best = ft; }
+            }
+            var riseAltSlope = AltAt(from.AddSeconds(10)) - AltAt(from);
+            passes.Add(new SatellitePass(from, best, bestAlt, set,
+                riseAltSlope >= 0 ? "ascending" : "descending", minElevationDeg));
+            startIndex = 1;
+        }
+        for (var i = startIndex; i < crossings.Count; i++)
         {
             var rise = crossings[i];
             if (!rise.Rising) continue;

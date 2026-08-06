@@ -147,8 +147,8 @@ dotnet build Astronomy.slnx -c Release
 dotnet test Astronomy.slnx -c Release
 ```
 
-- The full suite (1,260 tests: 1,122 accuracy, 97 unit, 31 API, 6
-  architecture, 4 integration) runs in CI with no network access — the
+- The full suite (1,366 tests: 1,122 accuracy, 168 unit, 64 API, 6
+  architecture, 6 integration) runs in CI with no network access — the
   accuracy fixtures (Horizons samples, the Vallado SGP4 verification set) are
   committed.
 - The SPICE/ERFA code paths require the native libraries and kernels and are

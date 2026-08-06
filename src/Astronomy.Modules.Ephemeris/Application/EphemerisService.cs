@@ -118,11 +118,8 @@ internal sealed class EphemerisService : IEphemerisService
             TwilightType.Nautical => -12.0,
             _ => -18.0,
         };
-        return Task.FromResult(new TwilightResult(
-            type,
-            _calculator.SearchAltitude(BodyId.Sun, date, observer, altitude, rising: true),
-            _calculator.SearchAltitude(BodyId.Sun, date, observer, altitude, rising: false),
-            Metadata(precision, "twilight")));
+        var (begin, end) = _calculator.SearchTwilight(date, observer, altitude);
+        return Task.FromResult(new TwilightResult(type, begin, end, Metadata(precision, "twilight")));
     }
 
     public Task<MoonPhasesResult> GetMoonPhasesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)

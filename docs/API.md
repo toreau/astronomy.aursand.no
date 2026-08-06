@@ -327,7 +327,7 @@ curl "https://astronomy.aursand.no/api/v1/ephemeris/twilight?date=2026-08-05&lat
 
 ```json
 {
-  "type": 1,
+  "type": "nautical",
   "beginUtc": "2026-08-05T00:27:10.0664851Z",
   "endUtc": "2026-08-05T22:12:24.7503286Z",
   "metadata": { "datasets": [ { "name": "leap-seconds", "version": "iers-2026a" }, { "name": "eop-ut1", "version": "20260804" } ], "algorithms": [ { "name": "astronomy-engine", "version": "2.1.19:twilight" } ], "warnings": [] }

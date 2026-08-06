@@ -438,6 +438,7 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
             var body = await client.GetStringAsync(
                 $"/api/v1/ephemeris/twilight?date=2026-12-15&latitude=59.9&longitude=10.7&type={type}");
             using var doc = JsonDocument.Parse(body);
+            Assert.Equal(type, doc.RootElement.GetProperty("type").GetString());
             Assert.NotEqual(JsonValueKind.Null, doc.RootElement.GetProperty("beginUtc").ValueKind);
             Assert.NotEqual(JsonValueKind.Null, doc.RootElement.GetProperty("endUtc").ValueKind);
         }

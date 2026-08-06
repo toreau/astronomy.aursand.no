@@ -255,22 +255,27 @@ public class SatelliteTests
     }
 
     [Fact]
-    public void Predict_WindowStartingMidPass_NoPassReported()
+    public void Predict_WindowStartingMidPass_IsIncludedWithClampedRise()
     {
-        // Documented behavior: passes are detected via horizon crossings, so a pass
-        // already in progress at the window start is not reported (asymmetric with
-        // the end-of-window clamp). Candidate for a future fix.
+        // Regression for the start-of-window clamp (mirror of the end clamp):
+        // a pass already in progress when the window starts is reported with
+        // riseUtc = from.
         var propagator = new OneSgp4Propagator();
         var elements = Iss();
         var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
         var full = SatellitePassPredictor.Predict(propagator, elements,
             elements.EpochUtc, elements.EpochUtc.AddHours(24), observer, 0.0, 10.0, 30.0);
         Assert.NotEmpty(full);
+
         var from = full[0].RiseUtc.AddMinutes(2);
-        var to = full[0].SetUtc.AddMinutes(-2);
+        var to = full[0].SetUtc.AddMinutes(2);
         var mid = SatellitePassPredictor.Predict(propagator, elements,
             from, to, observer, 0.0, 10.0, 30.0);
-        Assert.Empty(mid);
+        Assert.Single(mid);
+        Assert.Equal(from, mid[0].RiseUtc);
+        Assert.Equal(full[0].SetUtc, mid[0].SetUtc);
+        Assert.True(mid[0].RiseUtc <= mid[0].MaxElevationUtc);
+        Assert.True(mid[0].MaxElevationUtc <= mid[0].SetUtc);
     }
 
     [Fact]
