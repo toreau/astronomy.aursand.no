@@ -824,6 +824,11 @@ public static class HostGates
         var ommExit = await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot);
         Console.WriteLine(ommExit == 0 ? "naif: satellite-elements refresh OK" : "naif: satellite-elements refresh FAIL");
 
+        // Leap seconds (IERS) - changes only when a leap second is announced;
+        // kept fresh on every naif run (cheap, ~5 KB).
+        var leapExit = await Jobs.RunLeapSecondsJobAsync(dbPath, dataRoot);
+        Console.WriteLine(leapExit == 0 ? "naif: leap-seconds refresh OK" : "naif: leap-seconds refresh FAIL");
+
         // Star catalog - ingest once if not active yet (the HYG catalog is static;
         // this gap-fill runs on every naif invocation regardless of the throttle,
         // but only acts when the dataset is missing).
@@ -848,16 +853,16 @@ public static class HostGates
         if (!due)
         {
             Console.WriteLine($"naif: gate skipped (last refresh {File.GetLastWriteTimeUtc(marker):u}, 24h throttle)");
-            return c04Exit == 0 && ommExit == 0 && starExit == 0 ? 0 : 1;
+            return c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0 ? 0 : 1;
         }
 
         Console.WriteLine("naif: running reference gate (compare-spice)...");
         var gateExit = CompareSpiceFixtures("/data/fixtures", kernelDir);
         Console.WriteLine(gateExit == 0 ? "naif: reference gate PASS" : "naif: reference gate FAIL");
 
-        if (gateExit == 0 && c04Exit == 0 && ommExit == 0 && starExit == 0)
+        if (gateExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0)
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture));
-        return gateExit == 0 && c04Exit == 0 && ommExit == 0 && starExit == 0 ? 0 : 1;
+        return gateExit == 0 && c04Exit == 0 && ommExit == 0 && leapExit == 0 && starExit == 0 ? 0 : 1;
     }
 
     /// <summary>
