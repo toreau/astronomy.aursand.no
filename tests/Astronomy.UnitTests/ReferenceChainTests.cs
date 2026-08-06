@@ -51,4 +51,23 @@ public class ReferenceChainTests
         var empty = EopC04Interpolator.Interpolate([], DateTimeOffset.UtcNow);
         Assert.Equal(0, empty.Ut1MinusUtcSeconds);
     }
+
+    [Fact]
+    public void GeodeticToItrs_Origin_IsOnEquator()
+    {
+        var (x, y, z) = SpiceReferenceEphemeris.GeodeticToItrs(0, 0, 0);
+        Assert.Equal(6378.137, x, 3);
+        Assert.Equal(0, y, 3);
+        Assert.Equal(0, z, 3);
+    }
+
+    [Fact]
+    public void GeodeticToItrs_Oslo_MatchesIndependentComputation()
+    {
+        // Independent WGS-84 geodetic->geocentric computation (python).
+        var (x, y, z) = SpiceReferenceEphemeris.GeodeticToItrs(59.9, 10.7, 0);
+        Assert.Equal(3150.991850, x, 3);
+        Assert.Equal(595.386091, y, 3);
+        Assert.Equal(5494.898145, z, 3);
+    }
 }

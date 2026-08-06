@@ -79,10 +79,18 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
             xArcsec * Math.PI / 180 / 3600, yArcsec * Math.PI / 180 / 3600, rc2t);
         var itrs = RotateBy(rc2t, xyz);
 
+        // Topocentric correction: subtract the observer's geocentric ITRS position
+        // so the Moon's parallax (~1 deg max) is applied.
+        var (ox, oy, oz) = GeodeticToItrs(observer.Latitude.Degrees, observer.Longitude.Degrees,
+            observer.ElevationMeters / 1000.0);
+        var tx = itrs[0] - ox;
+        var ty = itrs[1] - oy;
+        var tz = itrs[2] - oz;
+
         var lat = observer.Latitude.Degrees * Math.PI / 180;
         var lon = observer.Longitude.Degrees * Math.PI / 180;
-        var len = Math.Sqrt(itrs[0] * itrs[0] + itrs[1] * itrs[1] + itrs[2] * itrs[2]);
-        var (ux, uy, uz) = (itrs[0] / len, itrs[1] / len, itrs[2] / len);
+        var len = Math.Sqrt(tx * tx + ty * ty + tz * tz);
+        var (ux, uy, uz) = (tx / len, ty / len, tz / len);
 
         var (ex, ey, ez) = (-Math.Sin(lon), Math.Cos(lon), 0.0);
         var (nx, ny, nz) = (-Math.Sin(lat) * Math.Cos(lon), -Math.Sin(lat) * Math.Sin(lon), Math.Cos(lat));
@@ -178,4 +186,23 @@ public sealed class SpiceReferenceEphemeris : IReferenceEphemeris
         "neptune" => "NEPTUNE BARYCENTER",
         _ => throw new ArgumentException($"unsupported body '{body.Name}'"),
     };
+
+    /// <summary>
+    /// Observer geocentric position in ITRS (km) from geodetic coordinates on the
+    /// WGS-84 ellipsoid. Used for the topocentric (parallax) correction in the
+    /// horizontal chain.
+    /// </summary>
+    internal static (double X, double Y, double Z) GeodeticToItrs(double latDeg, double lonDeg, double altKm)
+    {
+        const double a = 6378.137;            // WGS-84 equatorial radius (km)
+        const double f = 1.0 / 298.257223563; // WGS-84 flattening
+        var e2 = f * (2.0 - f);
+        var lat = latDeg * Math.PI / 180;
+        var lon = lonDeg * Math.PI / 180;
+        var sinLat = Math.Sin(lat);
+        var n = a / Math.Sqrt(1.0 - e2 * sinLat * sinLat);
+        return ((n + altKm) * Math.Cos(lat) * Math.Cos(lon),
+                (n + altKm) * Math.Cos(lat) * Math.Sin(lon),
+                (n * (1.0 - e2) + altKm) * sinLat);
+    }
 }

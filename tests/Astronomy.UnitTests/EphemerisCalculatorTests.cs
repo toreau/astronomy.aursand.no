@@ -96,4 +96,52 @@ public class EphemerisCalculatorTests
         Assert.Equal("First Quarter", EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(new DateTimeOffset(2026, 8, 20, 12, 0, 0, TimeSpan.Zero))));
         Assert.Equal("Full Moon", EphemerisCalculator.MoonPhaseName(calc.MoonPhase01(new DateTimeOffset(2026, 8, 28, 12, 0, 0, TimeSpan.Zero))));
     }
+
+    [Fact]
+    public void MoonHorizontal_MatchesHorizonsValue()
+    {
+        // Regression: the horizontal path used the geocentric moon position (parallax
+        // missing, altitude ~0.87 deg too high). Values are Horizons-verified
+        // (oslo 2026-08-15T12:00Z, no refraction): alt 24.80 az 154.12.
+        var calc = Calculator();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var (alt, az) = calc.Horizontal(BodyId.Moon,
+            new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero), observer, refraction: false);
+        Assert.InRange(alt, 24.70, 24.90);
+        Assert.InRange(az, 154.02, 154.22);
+    }
+
+    [Fact]
+    public void MoonHorizontal_AppliesParallax()
+    {
+        // The topocentric altitude must differ from the geocentric one by the
+        // moon's parallax (0.3-1.0 deg) at this epoch.
+        var calc = Calculator();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var utc = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
+        var eq = calc.GeocentricEquatorial(BodyId.Moon, utc, apparent: true);
+        var t = new CosineKitty.AstroTime(utc.UtcDateTime);
+        var engineObserver = new CosineKitty.Observer(59.9, 10.7, 0);
+        var geocentric = CosineKitty.Astronomy.Horizon(t, engineObserver, eq.RaDeg / 15.0, eq.DecDeg,
+            CosineKitty.Refraction.None);
+        var (alt, _) = calc.Horizontal(BodyId.Moon, utc, observer, refraction: false);
+        Assert.InRange(Math.Abs(alt - geocentric.altitude), 0.3, 1.0);
+    }
+
+    [Fact]
+    public void SunHorizontal_UnchangedByParallaxFix()
+    {
+        // The sun's parallax is ~0.002 deg; the topocentric path must not move it.
+        var calc = Calculator();
+        var observer = ObserverLocation.FromDegrees(59.9, 10.7, 0);
+        var utc = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
+        var eq = calc.GeocentricEquatorial(BodyId.Sun, utc, apparent: true);
+        var t = new CosineKitty.AstroTime(utc.UtcDateTime);
+        var engineObserver = new CosineKitty.Observer(59.9, 10.7, 0);
+        var geocentric = CosineKitty.Astronomy.Horizon(t, engineObserver, eq.RaDeg / 15.0, eq.DecDeg,
+            CosineKitty.Refraction.None);
+        var (alt, az) = calc.Horizontal(BodyId.Sun, utc, observer, refraction: false);
+        Assert.True(Math.Abs(alt - geocentric.altitude) < 0.01, $"sun alt moved {alt - geocentric.altitude:F4} deg");
+        Assert.True(Math.Abs(az - geocentric.azimuth) < 0.01, $"sun az moved {az - geocentric.azimuth:F4} deg");
+    }
 }

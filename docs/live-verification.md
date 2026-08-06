@@ -1,8 +1,16 @@
-# Live endpoint verification — 2026-08-06
+# Live endpoint verification — 2026-08-06 (updated after parallax fix)
 
 Independent comparison of every live endpoint on `https://astronomy.aursand.no`
 against external sources (JPL Horizons API, sunrise-sunset.org, IERS, VizieR
 HIP, USNO tables, python `sgp4`, `skyfield`). Harness: `spikes/S12-live-verification/`.
+
+> **Update (post-fix):** the moon horizontal parallax bug (item 1 below) was
+> fixed in both tiers — the topocentric observer offset is now subtracted in
+> `EphemerisCalculator.Horizontal` and `SpiceReferenceEphemeris.HorizontalPosition`
+> (commit after this report). Post-fix consumer verification against Horizons:
+> worst altitude/azimuth deviation **0.0008°** over 4 points (Oslo/Sydney ×
+> 2026-08-15/2027-01-01), previously 0.87°. Reference tier re-verified on
+> production after deploy.
 
 ## Environment snapshot
 
@@ -33,33 +41,21 @@ HIP, USNO tables, python `sgp4`, `skyfield`). Harness: `spikes/S12-live-verifica
 
 ## Deviations
 
-### 1. Moon horizontal altitude error ~0.9° — CONFIRMED BUG (both tiers)
+### 1. Moon horizontal altitude error ~0.9° — FIXED
 
-`/api/v1/ephemeris/moon/position?frame=horizontal` returns altitude **~0.87° too
-high** (azimuth correct to 0.003°). Reproduced at 6 points (Oslo/Sydney ×
-2026-08-15/2027-01-01) in **both** `precision=consumer` and `precision=reference`:
+`/api/v1/ephemeris/moon/position?frame=horizontal` returned altitude **~0.87° too
+high** (azimuth correct to 0.003°) in **both** `precision=consumer` and
+`precision=reference`. Root cause: both horizontal paths computed the Moon's
+position geocentrically without the observer's topocentric offset (parallax;
+Moon parallax reaches ~0.95°).
 
-```
-consumer  oslo    altΔ=0.8698° azΔ=0.0007°   (api 25.67/154.13  horizons 24.80/154.12)
-reference oslo    altΔ=0.8704° azΔ=0.0015°
-consumer  sydney  altΔ=0.8906° azΔ=0.0031°
-```
-
-**Root cause (from code):** both horizontal paths compute the Moon's position
-geocentrically and never apply the observer's topocentric offset (parallax):
-`EphemerisCalculator.Horizontal` (`GeocentricEquatorial` → `Astr.Horizon`) and
-`SpiceReferenceEphemeris.HorizontalPosition` (`spkpos` with `CENTER='EARTH'`).
-The Moon's parallax reaches ~0.95°; the observed +0.87° matches. The sun (0.002°
-parallax) and stars are unaffected; the moon rise/set endpoint is unaffected
-(engine `SearchRiseSet` applies parallax internally — matches skyfield/USNO).
-
-**Affected surface:** `position` (horizontal frame), `visibility` alt/az,
-almanac planet entries' alt/az — for the Moon only.
-
-**Suggested fix:** topocentric correction — subtract the observer's geocentric
-vector before the alt/az computation (Astronomy Engine provides
-`ObserverVector`/`VectorObserver`; SPICE supports `OBSERVER` centers). Fixing
-the consumer path alone may be enough if the reference tier is aligned to it.
+**Fix:** `EphemerisCalculator.Horizontal` now subtracts the observer's
+geocentric EQD vector (`ObserverVector`) before `Horizon`; 
+`SpiceReferenceEphemeris.HorizontalPosition` subtracts the observer's ITRS
+position (`GeodeticToItrs`, WGS-84) before normalizing. Regression tests pin
+the Horizons-verified value (alt 24.80°/az 154.12° @ Oslo 2026-08-15T12:00Z,
+tol 0.1°), the parallax magnitude, sun invariance, and `GeodeticToItrs`.
+Post-fix: worst consumer deviation 0.0008° over 4 points.
 
 ### 2. Sun rise/set vs sunrise-sunset.org: 103–220 s — EXPECTED MODEL DIFFERENCE
 
@@ -85,9 +81,9 @@ NOAA solar-calculator approximation (± 1–2 min class). Deltas are consistent
 | Time, calendars | Pass |
 | Ephemeris positions (icrs/of-date, both tiers) | Pass |
 | Horizontal (sun, planets) | Pass |
-| Horizontal (moon) | **Fail — parallax bug (item 1)** |
+| Horizontal (moon) | **Fixed** — parallax correction in both tiers; post-fix ≤ 0.0008° vs Horizons |
 | Rise/set, twilight, moon phases, events, stars, satellites, almanac | Pass |
 
-One confirmed bug (moon horizontal parallax, both tiers) and one documentation-
-grade observation. Everything else agrees with independent sources within
-declared tolerances.
+One bug found (moon horizontal parallax, both tiers) — **fixed and verified**.
+One documentation-grade observation. Everything else agrees with independent
+sources within declared tolerances.

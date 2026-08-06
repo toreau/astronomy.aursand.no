@@ -42,10 +42,18 @@ internal sealed class EphemerisCalculator
         BodyId body, DateTimeOffset utc, ObserverLocation observer, bool refraction)
     {
         var t = new AstroTime(utc.UtcDateTime);
-        var eq = GeocentricEquatorial(body, utc, apparent: true);
         var engineObserver = new Observer(observer.Latitude.Degrees, observer.Longitude.Degrees, observer.ElevationMeters);
-        // The engine's Horizon expects RA in HOURS (its Equatorial convention).
-        var hor = Astr.Horizon(t, engineObserver, eq.RaDeg / 15.0, eq.DecDeg,
+        // Geocentric apparent EQD vector (same as GeocentricEquatorial(apparent: true)).
+        var geo = Astr.GeoVector(ToEngineBody(body), t, Aberration.Corrected);
+        geo = Astr.RotateVector(Astr.Rotation_EQJ_EQD(t), geo);
+        // Topocentric correction: subtract the observer's geocentric position so the
+        // Moon's parallax (~1 deg max) is applied; negligible for other bodies.
+        var obs = Astr.ObserverVector(t, engineObserver, EquatorEpoch.OfDate);
+        var topo = new AstroVector(geo.x - obs.x, geo.y - obs.y, geo.z - obs.z, t);
+        var eq = Astr.EquatorFromVector(topo);
+        // The engine's Horizon expects RA in HOURS (its Equatorial convention);
+        // EquatorFromVector already returns hours.
+        var hor = Astr.Horizon(t, engineObserver, eq.ra, eq.dec,
             refraction ? Refraction.Normal : Refraction.None);
         return (hor.altitude, hor.azimuth);
     }

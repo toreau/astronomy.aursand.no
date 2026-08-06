@@ -1,6 +1,7 @@
 import json, os, time, urllib.parse
 
-API = "https://astronomy.aursand.no"
+import os as _os
+API = _os.environ.get("ASTRONOMY_API_BASE", "https://astronomy.aursand.no")
 CACHE = os.path.join(os.path.dirname(__file__), ".cache")
 os.makedirs(CACHE, exist_ok=True)
 
