@@ -170,6 +170,8 @@ Environment: `ASTRONOMY_DB_PATH` (default `/data/astronomy.db`),
 
 ## Documentation
 
+- `CHANGELOG.md` — dated change history (Core · Bugs fixed · Performance ·
+  Infrastructure & ops · Tests · Documentation · Dependencies)
 - `docs/API.md` — full request/response reference
 - `docs/phase1-foundation.md` … `docs/phase7-satellites.md` — phase reports
   with validation evidence
