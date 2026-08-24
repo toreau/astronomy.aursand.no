@@ -12,20 +12,24 @@ using Astronomy.Modules.Satellites.Application;
 using Astronomy.Modules.Stars.Application;
 using Astronomy.Modules.Time.Application;
 using Astronomy.SharedKernel;
+using Astronomy.SharedKernel.Persistence;
 using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
-var dbPath = builder.Configuration["ASTRONOMY_DB_PATH"] ?? "/data/astronomy.db";
+var dbConfig = AstronomyDbConfig.FromValues(
+    builder.Configuration["ASTRONOMY_DB_PROVIDER"],
+    builder.Configuration["ASTRONOMY_DB_CONNECTION"],
+    builder.Configuration["ASTRONOMY_DB_PATH"]);
 var dataRoot = builder.Configuration["ASTRONOMY_DATA_ROOT"] ?? "/data";
-Console.WriteLine($"astronomy-api: db={dbPath} dataRoot={dataRoot}");
+Console.WriteLine($"astronomy-api: db provider={dbConfig.Provider} dataRoot={dataRoot}");
 
 try
 {
-    InfrastructureRegistrar.MigrateRegistry(dbPath);
-    SatelliteStore.EnsureSchema(dbPath);
+    InfrastructureRegistrar.EnsureSchema(dbConfig);
+    SatelliteStore.EnsureSchema(dbConfig);
     Console.WriteLine("astronomy-api: schema ok (registry + satellites)");
 }
 catch (Exception ex)
@@ -33,7 +37,7 @@ catch (Exception ex)
     Console.WriteLine($"astronomy-api: schema init FAIL {ex.Message.Split('\n')[0]} (health/ready will report not-ready)");
 }
 
-builder.Services.AddAstronomyInfrastructure(dbPath, dataRoot);
+builder.Services.AddAstronomyInfrastructure(dbConfig, dataRoot);
 builder.Services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(
         System.Text.Json.JsonNamingPolicy.CamelCase)));
@@ -55,7 +59,7 @@ builder.Services.AddCalendarsModule();
 builder.Services.AddTimeModule();
 builder.Services.AddEphemerisModule();
 builder.Services.AddStarsModule();
-builder.Services.AddSatellitesModule(dbPath);
+builder.Services.AddSatellitesModule(dbConfig);
 builder.Services.AddAlmanacModule();
 builder.Services.AddOpenApi();
 
@@ -114,7 +118,7 @@ app.UseResponseCompression();
 
 app.UseOutputCache();
 
-app.MapHealthEndpoints(dbPath);
+app.MapHealthEndpoints(dbConfig);
 var api = app.MapGroup("/api/v1");
 api.MapTimeEndpoints();
 api.MapCalendarEndpoints();

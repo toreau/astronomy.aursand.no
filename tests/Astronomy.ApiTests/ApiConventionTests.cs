@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Astronomy.SharedKernel.Persistence;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Astronomy.ApiTests;
@@ -12,7 +13,7 @@ public class ApiConventionTests : IClassFixture<WebApplicationFactory<Program>>
     public ApiConventionTests(WebApplicationFactory<Program> factory)
     {
         var db = Path.Combine(Path.GetTempPath(), $"astro-api-{Guid.NewGuid():N}.db");
-        Astronomy.Infrastructure.InfrastructureRegistrar.MigrateRegistry(db);
+        Astronomy.Infrastructure.InfrastructureRegistrar.EnsureSchema(AstronomyDbConfig.FromValues("sqlite", null, db));
         _factory = factory.WithWebHostBuilder(b => b.UseSetting("ASTRONOMY_DB_PATH", db));
     }
 

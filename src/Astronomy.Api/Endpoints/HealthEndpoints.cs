@@ -1,11 +1,13 @@
+using Astronomy.Infrastructure;
 using Astronomy.SharedKernel.Datasets;
-using Microsoft.Data.Sqlite;
+using Astronomy.SharedKernel.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace Astronomy.Api.Endpoints;
 
 public static class HealthEndpoints
 {
-    public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app, string dbPath)
+    public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app, AstronomyDbConfig config)
     {
         app.MapGet("/", () => Results.Text("Astronomy API"));
 
@@ -13,7 +15,7 @@ public static class HealthEndpoints
 
         app.MapGet("/health/ready", async (HttpContext context, CancellationToken ct) =>
         {
-            var db = DatabaseCheck(dbPath);
+            var db = DatabaseCheck(config);
             var sp = context.RequestServices!;
             var payload = new
             {
@@ -33,16 +35,15 @@ public static class HealthEndpoints
         return app;
     }
 
-    private static string DatabaseCheck(string dbPath)
+    private static string DatabaseCheck(AstronomyDbConfig config)
     {
         try
         {
-            using var conn = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly");
-            conn.Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('Datasets','ActiveDatasets')";
-            var tables = (long)cmd.ExecuteScalar()!;
-            return tables == 2 ? "ok" : $"schema incomplete ({tables}/2 registry tables)";
+            using var ctx = InfrastructureRegistrar.CreateRegistryContext(config);
+            if (!ctx.Database.CanConnect()) return "unreachable";
+            _ = ctx.Datasets.AsNoTracking().Take(1).Any();
+            _ = ctx.ActiveDatasets.AsNoTracking().Take(1).Any();
+            return "ok";
         }
         catch (Exception ex)
         {

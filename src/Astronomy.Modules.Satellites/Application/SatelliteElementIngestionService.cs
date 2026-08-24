@@ -1,5 +1,6 @@
 using System.Globalization;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 
 namespace Astronomy.Modules.Satellites.Application;
 
@@ -9,12 +10,12 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
     private const string DatasetName = "satellite-elements";
     private const int MinimumRowCount = 10;
 
-    private readonly string _dbPath;
+    private readonly AstronomyDbConfig _config;
     private readonly IDatasetRegistry _registry;
 
-    public SatelliteElementIngestionService(string dbPath, IDatasetRegistry registry)
+    public SatelliteElementIngestionService(AstronomyDbConfig config, IDatasetRegistry registry)
     {
-        _dbPath = dbPath;
+        _config = config;
         _registry = registry;
     }
 
@@ -72,7 +73,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
     public async Task<IngestionStatus> GetStatusAsync(CancellationToken ct = default)
     {
         var active = _registry.ActiveVersion(DatasetName);
-        var rows = active is null ? [] : SatelliteStore.ReadElements(_dbPath, active.Version);
+        var rows = active is null ? [] : SatelliteStore.ReadElements(_config, active.Version);
         var (fresh, warn, degraded, refuse) = SatelliteStore.Freshness(rows, DateTimeOffset.UtcNow);
         return new IngestionStatus(active?.Version, rows.Count, fresh, warn, degraded, refuse);
     }
@@ -82,7 +83,7 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
         var checksum = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(string.Join('\n', rows.Select(r => SatelliteStore.ToJson(r)))))).ToLowerInvariant();
         await _registry.StageAsync(DatasetName, version, checksum);
-        SatelliteStore.WriteElements(_dbPath, version, rows);
+        SatelliteStore.WriteElements(_config, version, rows);
     }
 
     internal static List<OrbitalElementRow> ParseCsv(string csv)

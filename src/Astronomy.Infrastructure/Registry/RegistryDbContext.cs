@@ -48,10 +48,14 @@ public class RegistryDbContext : DbContext
 
 public class RegistryDesignFactory : IDesignTimeDbContextFactory<RegistryDbContext>
 {
+    // Migrations are Postgres-owned (Option A): always design against Npgsql so a
+    // `dotnet ef` run can never silently generate a SQLite migration. The connection
+    // string is a design-time placeholder - `migrations add` never opens it.
     public RegistryDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<RegistryDbContext>()
-            .UseSqlite("Data Source=registry-design.db").Options;
+            .UseNpgsql("Host=localhost;Database=astronomy-design;Username=astronomy;Password=astronomy")
+            .Options;
         return new RegistryDbContext(options);
     }
 }

@@ -3,6 +3,7 @@ using Astronomy.Infrastructure.Catalog;
 using Astronomy.Infrastructure.Registry;
 using Astronomy.Infrastructure.Time;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Astronomy.SharedKernel.Time;
 
 namespace Astronomy.IntegrationTests;
@@ -12,10 +13,12 @@ public class RegistryLifecycleTests : IDisposable
     private readonly string _db = Path.Combine(Path.GetTempPath(), $"astro-reg-{Guid.NewGuid():N}.db");
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"astro-data-{Guid.NewGuid():N}");
 
+    private static AstronomyDbConfig Config(string path) => AstronomyDbConfig.FromValues("sqlite", null, path);
+
     public RegistryLifecycleTests()
     {
         Directory.CreateDirectory(_root);
-        InfrastructureRegistrar.MigrateRegistry(_db);
+        InfrastructureRegistrar.EnsureSchema(Config(_db));
     }
 
     public void Dispose()
@@ -25,7 +28,7 @@ public class RegistryLifecycleTests : IDisposable
             try { File.Delete(f); } catch { }
     }
 
-    private DatasetRegistry Registry() => new(() => InfrastructureRegistrar.CreateRegistryContext(_db));
+    private DatasetRegistry Registry() => new(() => InfrastructureRegistrar.CreateRegistryContext(Config(_db)));
 
     [Fact]
     public async Task Stage_Activate_Rollback_Lifecycle()
@@ -86,7 +89,7 @@ public class RegistryLifecycleTests : IDisposable
         await registry.ActivateAsync("eop-ut1", "v1");
 
         var backup = _db + ".backup";
-        InfrastructureRegistrar.BackupDatabase(_db, backup);
+        InfrastructureRegistrar.BackupDatabase(Config(_db), backup);
         Assert.True(File.Exists(backup));
 
         File.WriteAllText(_db, "corrupted garbage");

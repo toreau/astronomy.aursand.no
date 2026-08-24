@@ -4,6 +4,7 @@ using Astronomy.Infrastructure;
 using Astronomy.Infrastructure.Registry;
 using Astronomy.Modules.Satellites.Application;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Astronomy.SharedKernel.Time;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,7 +23,7 @@ public static class Jobs
         "https://datacenter.iers.org/data/latestVersion/221_EOP_C04_14.XX.IAU2000A221.txt",
     };
 
-    public static async Task<int> RunEopJobAsync(string dbPath, string dataRoot)
+    public static async Task<int> RunEopJobAsync(AstronomyDbConfig config, string dataRoot)
     {
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         var text = await hc.GetStringAsync(EopSourceUrl);
@@ -56,14 +57,14 @@ public static class Jobs
         await File.WriteAllLinesAsync(Path.Combine(dir, "eop-ut1.csv"), csv);
         var checksum = Sha256(string.Join('\n', csv));
 
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         await registry.StageAsync("eop-ut1", version, checksum);
         await registry.ActivateAsync("eop-ut1", version);
         Console.WriteLine($"eop: {samples.Count} samples staged+activated as {version} (latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}s)");
         return 0;
     }
 
-    public static async Task<int> RunEopC04JobAsync(string dbPath, string dataRoot)
+    public static async Task<int> RunEopC04JobAsync(AstronomyDbConfig config, string dataRoot)
     {
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(120) };
         string? text = null;
@@ -119,14 +120,14 @@ public static class Jobs
         await File.WriteAllLinesAsync(Path.Combine(dir, "eop-c04.csv"), csv);
         var checksum = Sha256(string.Join('\n', csv));
 
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         await registry.StageAsync("eop-c04", version, checksum);
         await registry.ActivateAsync("eop-c04", version);
         Console.WriteLine($"eop-c04: {samples.Count} samples staged+activated as {version} (latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}s)");
         return 0;
     }
 
-    public static async Task<int> RunLeapSecondsJobAsync(string dbPath, string dataRoot)
+    public static async Task<int> RunLeapSecondsJobAsync(AstronomyDbConfig config, string dataRoot)
     {
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
         string text;
@@ -168,7 +169,7 @@ public static class Jobs
         await File.WriteAllLinesAsync(Path.Combine(dir, "leap-seconds.csv"), csv);
         var checksum = Sha256(string.Join('\n', csv));
 
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         await registry.StageAsync("leap-seconds", version, checksum);
         await registry.ActivateAsync("leap-seconds", version);
         Console.WriteLine($"leap-seconds: {entries.Count} entries staged+activated as {version} (latest TAI-UTC {entries[^1].TaiMinusUtc})");
@@ -236,7 +237,7 @@ public static class Jobs
 
     private static readonly DateTimeOffset LeapSecondEraStart = new(1972, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    public static async Task<int> RunStarCatalogJobAsync(string dbPath, string dataRoot, Func<string, Task<bool>>? gate = null)
+    public static async Task<int> RunStarCatalogJobAsync(AstronomyDbConfig config, string dataRoot, Func<string, Task<bool>>? gate = null)
     {
         const string sourceUrl = "https://raw.githubusercontent.com/astronexus/HYG-Database/main/hyg/v3/hyg_v38.csv.gz";
         using var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
@@ -299,7 +300,7 @@ public static class Jobs
         await File.WriteAllTextAsync(Path.Combine(dir, "star-catalog-hyg.csv"), csvText);
         var checksum = Sha256(csvText);
 
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         await registry.StageAsync("star-catalog-hyg", version, checksum);
         if (await GateAndActivateAsync("star-catalog-hyg", version, registry, gate) != 0)
             return 1;
@@ -313,15 +314,15 @@ public static class Jobs
     /// same-day reruns (same version, upsert semantics); on any failure the
     /// currently-active dataset stays untouched.
     /// </summary>
-    public static async Task<int> RunSatelliteElementsRefreshAsync(string dbPath, string dataRoot, Func<string, Task<bool>>? gate = null)
+    public static async Task<int> RunSatelliteElementsRefreshAsync(AstronomyDbConfig config, string dataRoot, Func<string, Task<bool>>? gate = null)
     {
         // The registry + satellite schema are normally created by the heartbeat/API
         // startup; ensure they exist so this job also works standalone on a fresh db.
-        InfrastructureRegistrar.MigrateRegistry(dbPath);
-        SatelliteStore.EnsureSchema(dbPath);
+        InfrastructureRegistrar.EnsureSchema(config);
+        SatelliteStore.EnsureSchema(config);
         var service = new ServiceCollection()
-            .AddAstronomyInfrastructure(dbPath, dataRoot)
-            .AddSatellitesModule(dbPath)
+            .AddAstronomyInfrastructure(config, dataRoot)
+            .AddSatellitesModule(config)
             .BuildServiceProvider()
             .GetRequiredService<ISatelliteElementIngestionService>();
         var version = DateTime.UtcNow.ToString("yyyyMMdd");
@@ -330,7 +331,7 @@ public static class Jobs
             Console.WriteLine($"omm: refresh FAIL - staging {version} rejected (active dataset unchanged)");
             return 1;
         }
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         if (await GateAndActivateAsync("satellite-elements", version, registry, gate) != 0)
             return 1;
         var s = await service.GetStatusAsync();
@@ -398,8 +399,8 @@ public static class Jobs
     /// <summary>Path of the active dataset's CSV, or null when not ingested.</summary>
     internal static string? ActiveDatasetCsvPath(string dataRoot, string datasetName, string fileName)
     {
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(
-            Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db"));
+        var config = AstronomyDbConfig.FromEnvironment();
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         var active = registry.ActiveVersion(datasetName);
         if (active is null) return null;
         var path = Path.Combine(dataRoot, "datasets", datasetName, active.Version, fileName);

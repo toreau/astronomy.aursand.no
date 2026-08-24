@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -14,13 +15,13 @@ namespace Astronomy.Modules.Satellites.Migrations
                 name: "Elements",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "INTEGER", nullable: false)
-                        .Annotation("Sqlite:Autoincrement", true),
-                    DatasetVersion = table.Column<string>(type: "TEXT", nullable: false),
-                    NoradId = table.Column<string>(type: "TEXT", nullable: false),
-                    ObjectName = table.Column<string>(type: "TEXT", nullable: false),
-                    EpochUtc = table.Column<string>(type: "TEXT", nullable: false),
-                    ElementsJson = table.Column<string>(type: "TEXT", nullable: false)
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    DatasetVersion = table.Column<string>(type: "text", nullable: false),
+                    NoradId = table.Column<string>(type: "text", nullable: false),
+                    ObjectName = table.Column<string>(type: "text", nullable: false),
+                    EpochUtc = table.Column<string>(type: "text", nullable: false),
+                    ElementsJson = table.Column<string>(type: "text", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -30,7 +31,8 @@ namespace Astronomy.Modules.Satellites.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Elements_DatasetVersion_NoradId",
                 table: "Elements",
-                columns: new[] { "DatasetVersion", "NoradId" });
+                columns: new[] { "DatasetVersion", "NoradId" },
+                unique: true);
         }
 
         /// <inheritdoc />

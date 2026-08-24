@@ -1,4 +1,5 @@
 using Astronomy.Modules.Satellites.Application;
+using Astronomy.SharedKernel.Persistence;
 
 namespace Astronomy.UnitTests;
 
@@ -6,9 +7,11 @@ public class SatelliteStoreTests : IDisposable
 {
     private readonly string _db = Path.Combine(Path.GetTempPath(), $"sat-store-{Guid.NewGuid():N}.db");
 
+    private static AstronomyDbConfig Config(string path) => AstronomyDbConfig.FromValues("sqlite", null, path);
+
     public SatelliteStoreTests()
     {
-        SatelliteStore.EnsureSchema(_db);
+        SatelliteStore.EnsureSchema(Config(_db));
     }
 
     public void Dispose()
@@ -27,8 +30,8 @@ public class SatelliteStoreTests : IDisposable
     public void ElementsJson_RoundTrips_SpecialCharactersInName()
     {
         var row = Row("ISS \"ZARYA\" \\ TEST", "25544");
-        SatelliteStore.WriteElements(_db, "v1", [row]);
-        var read = SatelliteStore.ReadElements(_db, "v1");
+        SatelliteStore.WriteElements(Config(_db), "v1", [row]);
+        var read = SatelliteStore.ReadElements(Config(_db), "v1");
         Assert.Single(read);
         Assert.Equal(row.Name, read[0].Name);
         Assert.Equal(row.NoradId, read[0].NoradId);
@@ -39,9 +42,9 @@ public class SatelliteStoreTests : IDisposable
     [Fact]
     public void WriteElements_SameVersionTwice_UpsertsNoDuplicates()
     {
-        SatelliteStore.WriteElements(_db, "v1", [Row("ISS (ZARYA)", "25544"), Row("ISS (NAUKA)", "25413")]);
-        SatelliteStore.WriteElements(_db, "v1", [Row("ISS (ZARYA)", "25544")]);
-        var read = SatelliteStore.ReadElements(_db, "v1");
+        SatelliteStore.WriteElements(Config(_db), "v1", [Row("ISS (ZARYA)", "25544"), Row("ISS (NAUKA)", "25413")]);
+        SatelliteStore.WriteElements(Config(_db), "v1", [Row("ISS (ZARYA)", "25544")]);
+        var read = SatelliteStore.ReadElements(Config(_db), "v1");
         Assert.Single(read);
         Assert.Equal("25544", read[0].NoradId);
     }
@@ -49,10 +52,10 @@ public class SatelliteStoreTests : IDisposable
     [Fact]
     public void WriteElements_DifferentVersions_Coexist()
     {
-        SatelliteStore.WriteElements(_db, "v1", [Row("ISS (ZARYA)", "25544")]);
-        SatelliteStore.WriteElements(_db, "v2", [Row("ISS (NAUKA)", "25413")]);
-        Assert.Single(SatelliteStore.ReadElements(_db, "v1"));
-        Assert.Single(SatelliteStore.ReadElements(_db, "v2"));
+        SatelliteStore.WriteElements(Config(_db), "v1", [Row("ISS (ZARYA)", "25544")]);
+        SatelliteStore.WriteElements(Config(_db), "v2", [Row("ISS (NAUKA)", "25413")]);
+        Assert.Single(SatelliteStore.ReadElements(Config(_db), "v1"));
+        Assert.Single(SatelliteStore.ReadElements(Config(_db), "v2"));
     }
 
     [Fact]
@@ -60,7 +63,7 @@ public class SatelliteStoreTests : IDisposable
     {
         // Rows staged before the STJ format used short keys and unescaped names.
         const string legacy = "{\"name\":\"ISS (ZARYA)\",\"norad\":\"25544\",\"epoch\":\"2026-08-03T12:00:00.0000000+00:00\",\"mm\":15.5,\"ecc\":0.0007,\"incl\":51.6,\"raan\":64.4,\"argp\":9.2,\"ma\":350.8,\"bstar\":0.0001,\"mmdot\":0.00007,\"mmddot\":0,\"rev\":57913}";
-        using (var ctx = SatelliteStore.CreateContext(_db))
+        using (var ctx = SatelliteStore.CreateContext(Config(_db)))
         {
             ctx.Elements.Add(new SatelliteElementRecord
             {
@@ -72,7 +75,7 @@ public class SatelliteStoreTests : IDisposable
             });
             ctx.SaveChanges();
         }
-        var read = SatelliteStore.ReadElements(_db, "legacy");
+        var read = SatelliteStore.ReadElements(Config(_db), "legacy");
         Assert.Single(read);
         Assert.Equal("ISS (ZARYA)", read[0].Name);
         Assert.Equal(15.5, read[0].MeanMotion, 9);

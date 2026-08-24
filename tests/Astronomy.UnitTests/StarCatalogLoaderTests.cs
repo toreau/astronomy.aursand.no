@@ -1,6 +1,7 @@
 using Astronomy.Infrastructure;
 using Astronomy.Infrastructure.Catalog;
 using Astronomy.Infrastructure.Registry;
+using Astronomy.SharedKernel.Persistence;
 using Astronomy.SharedKernel.Stars;
 
 namespace Astronomy.UnitTests;
@@ -10,9 +11,11 @@ public class StarCatalogLoaderTests : IDisposable
     private readonly string _db = Path.Combine(Path.GetTempPath(), $"star-load-{Guid.NewGuid():N}.db");
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"star-root-{Guid.NewGuid():N}");
 
+    private static AstronomyDbConfig Config(string path) => AstronomyDbConfig.FromValues("sqlite", null, path);
+
     public StarCatalogLoaderTests()
     {
-        InfrastructureRegistrar.MigrateRegistry(_db);
+        InfrastructureRegistrar.EnsureSchema(Config(_db));
     }
 
     public void Dispose()
@@ -24,7 +27,7 @@ public class StarCatalogLoaderTests : IDisposable
 
     private async Task<StarCatalog> LoadAsync()
     {
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(_db));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(Config(_db)));
         var catalog = new DatasetCatalog(registry, _root);
         return Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(catalog, _root);
     }
@@ -48,7 +51,7 @@ public class StarCatalogLoaderTests : IDisposable
             "this,is,not,a,valid,row,,,,,,,",
             "91262,Vega,3Alp Lyr,Alp,3,Lyr,279.234735,38.783689,200.94,286.23,25.0,0.03,A0Va",
         });
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(_db));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(Config(_db)));
         await registry.StageAsync("star-catalog-hyg", "v38", "x");
         await registry.ActivateAsync("star-catalog-hyg", "v38");
 

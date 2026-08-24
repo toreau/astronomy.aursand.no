@@ -4,21 +4,23 @@ using Astronomy.Modules.Satellites.Application;
 using Microsoft.Extensions.DependencyInjection;
 using Astronomy.DataIngestion;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 
-var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+var dbConfig = AstronomyDbConfig.FromEnvironment();
 var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
 var mode = args.Length > 0 ? args[0] : "heartbeat";
 
 switch (mode)
 {
     case "migrate":
-        InfrastructureRegistrar.MigrateRegistry(dbPath);
+        InfrastructureRegistrar.EnsureSchema(dbConfig);
         Console.WriteLine("migrate: registry schema ok");
         break;
 
     case "backup":
-        InfrastructureRegistrar.BackupDatabase(dbPath, args.Length > 1 ? args[1] : dbPath + ".backup");
+        InfrastructureRegistrar.BackupDatabase(dbConfig, args.Length > 1 ? args[1] : dbConfig.SqlitePath + ".backup");
         Console.WriteLine("backup: done");
         break;
 
@@ -88,7 +90,7 @@ switch (mode)
 }
 return 0;
 
-IDatasetRegistry Registry() => new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+IDatasetRegistry Registry() => new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbConfig));
 
 async Task<int> DatasetCommandAsync(string[] args)
 {
@@ -121,13 +123,13 @@ async Task<int> IngestCommandAsync(string[] args)
 {
     if (args.Length < 1) { Console.WriteLine("usage: ingest <eop|eop-c04|leap-seconds|star-catalog>"); return 1; }
     // Ensure the registry schema exists (the heartbeat normally creates it).
-    InfrastructureRegistrar.MigrateRegistry(dbPath);
+    InfrastructureRegistrar.EnsureSchema(dbConfig);
     return args[0] switch
     {
-        "eop" => await Jobs.RunEopJobAsync(dbPath, dataRoot),
-        "eop-c04" => await Jobs.RunEopC04JobAsync(dbPath, dataRoot),
-        "leap-seconds" => await Jobs.RunLeapSecondsJobAsync(dbPath, dataRoot),
-        "star-catalog" => await Jobs.RunStarCatalogJobAsync(dbPath, dataRoot),
+        "eop" => await Jobs.RunEopJobAsync(dbConfig, dataRoot),
+        "eop-c04" => await Jobs.RunEopC04JobAsync(dbConfig, dataRoot),
+        "leap-seconds" => await Jobs.RunLeapSecondsJobAsync(dbConfig, dataRoot),
+        "star-catalog" => await Jobs.RunStarCatalogJobAsync(dbConfig, dataRoot),
         _ => 1,
     };
 }
@@ -136,17 +138,17 @@ async Task<int> OmmCommandAsync(string[] args)
 {
     if (args.Length < 1) { Console.WriteLine("usage: omm <fetch|stage-file|activate|rollback|status|refresh> [version] [file]"); return 1; }
     // Ensure the registry + satellite schema exist (the heartbeat normally creates them).
-    InfrastructureRegistrar.MigrateRegistry(dbPath);
-    SatelliteStore.EnsureSchema(dbPath);
+    InfrastructureRegistrar.EnsureSchema(dbConfig);
+    SatelliteStore.EnsureSchema(dbConfig);
     var service = new Microsoft.Extensions.DependencyInjection.ServiceCollection()
-        .AddAstronomyInfrastructure(dbPath, dataRoot)
-        .AddSatellitesModule(dbPath)
+        .AddAstronomyInfrastructure(dbConfig, dataRoot)
+        .AddSatellitesModule(dbConfig)
         .BuildServiceProvider()
         .GetRequiredService<ISatelliteElementIngestionService>();
     switch (args[0])
     {
         case "refresh":
-            return await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot);
+            return await Jobs.RunSatelliteElementsRefreshAsync(dbConfig, dataRoot);
         case "fetch":
             return await service.FetchAndStageAsync(args[1]);
         case "stage-file":
@@ -169,7 +171,7 @@ async Task HeartbeatAsync()
 {
     try
     {
-        InfrastructureRegistrar.MigrateRegistry(dbPath);
+        InfrastructureRegistrar.EnsureSchema(dbConfig);
         Console.WriteLine("worker: schema ok");
     }
     catch (Exception ex)
@@ -180,29 +182,59 @@ async Task HeartbeatAsync()
     {
         try
         {
-            using var conn = new SqliteConnection($"Data Source={dbPath}");
-            conn.Open();
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS heartbeat (id INTEGER PRIMARY KEY, at_utc TEXT NOT NULL);";
-                cmd.ExecuteNonQuery();
-            }
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = "INSERT INTO heartbeat (at_utc) VALUES ($now)";
-                cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
-                cmd.ExecuteNonQuery();
-            }
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = "SELECT COUNT(*) FROM heartbeat";
-                Console.WriteLine($"worker-heartbeat: ok, beats={(long)cmd.ExecuteScalar()!}");
-            }
+            if (dbConfig.IsPostgres)
+                PostgresBeat(dbConfig.ConnectionString!);
+            else
+                SqliteBeat(dbConfig.SqlitePath);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"worker-heartbeat: FAIL {ex.Message.Split('\n')[0]}");
         }
         await Task.Delay(TimeSpan.FromSeconds(30));
+    }
+}
+
+void SqliteBeat(string path)
+{
+    using var conn = new SqliteConnection($"Data Source={path}");
+    conn.Open();
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS heartbeat (id INTEGER PRIMARY KEY, at_utc TEXT NOT NULL);";
+        cmd.ExecuteNonQuery();
+    }
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "INSERT INTO heartbeat (at_utc) VALUES ($now)";
+        cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
+        cmd.ExecuteNonQuery();
+    }
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM heartbeat";
+        Console.WriteLine($"worker-heartbeat: ok, beats={(long)cmd.ExecuteScalar()!}");
+    }
+}
+
+void PostgresBeat(string connectionString)
+{
+    using var conn = new NpgsqlConnection(connectionString);
+    conn.Open();
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "CREATE TABLE IF NOT EXISTS heartbeat (id BIGSERIAL PRIMARY KEY, at_utc TEXT NOT NULL);";
+        cmd.ExecuteNonQuery();
+    }
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "INSERT INTO heartbeat (at_utc) VALUES (@now)";
+        cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("O"));
+        cmd.ExecuteNonQuery();
+    }
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM heartbeat";
+        Console.WriteLine($"worker-heartbeat: ok, beats={(long)cmd.ExecuteScalar()!}");
     }
 }

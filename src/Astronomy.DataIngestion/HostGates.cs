@@ -8,6 +8,7 @@ using Astronomy.Infrastructure.Registry;
 using Astronomy.Modules.Ephemeris.Application;
 using Astronomy.Modules.Ephemeris.Reference;
 using Astronomy.Modules.Satellites.Application;
+using Astronomy.SharedKernel.Persistence;
 
 namespace Astronomy.DataIngestion;
 
@@ -343,14 +344,14 @@ public static class HostGates
     /// </summary>
     public static async Task<int> StarGate(string fixtureDir, string? version = null)
     {
-        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+        var config = AstronomyDbConfig.FromEnvironment();
         var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
         Astronomy.SharedKernel.Stars.StarCatalog catalog;
         if (version is null)
         {
             catalog = Astronomy.Infrastructure.Stars.StarCatalogLoader.LoadStarCatalog(
                 new Astronomy.Infrastructure.Catalog.DatasetCatalog(
-                    new Astronomy.Infrastructure.Registry.DatasetRegistry(() => Astronomy.Infrastructure.InfrastructureRegistrar.CreateRegistryContext(dbPath)),
+                    new Astronomy.Infrastructure.Registry.DatasetRegistry(() => Astronomy.Infrastructure.InfrastructureRegistrar.CreateRegistryContext(config)),
                     dataRoot),
                 dataRoot);
         }
@@ -491,8 +492,8 @@ public static class HostGates
     /// </summary>
     public static int SatGate(string? version = null)
     {
-        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var config = AstronomyDbConfig.FromEnvironment();
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         var active = registry.ActiveVersion("satellite-elements");
         if (active is null && version is null)
         {
@@ -500,7 +501,7 @@ public static class HostGates
             return 1;
         }
         var gateVersion = version ?? active!.Version;
-        var rows = SatelliteStore.ReadElements(dbPath, gateVersion);
+        var rows = SatelliteStore.ReadElements(config, gateVersion);
         var iss = rows.FirstOrDefault(r => r.NoradId == "25544");
         if (iss is null)
         {
@@ -838,37 +839,37 @@ public static class HostGates
         }
 
         // EOP UT1-UTC (USNO ser7) - daily product; refreshed on every naif run.
-        var dbPath = Environment.GetEnvironmentVariable("ASTRONOMY_DB_PATH") ?? "/data/astronomy.db";
+        var config = AstronomyDbConfig.FromEnvironment();
         var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
-        var eopExit = await Jobs.RunEopJobAsync(dbPath, dataRoot);
+        var eopExit = await Jobs.RunEopJobAsync(config, dataRoot);
         Console.WriteLine(eopExit == 0 ? "naif: eop-ut1 refresh OK" : "naif: eop-ut1 refresh FAIL");
 
         // EOP C04 (IERS) refresh - daily product, refreshed on every naif run
         // (cheap, ~3.6MB; date-based version restages in place).
-        var c04Exit = await Jobs.RunEopC04JobAsync(dbPath, dataRoot);
+        var c04Exit = await Jobs.RunEopC04JobAsync(config, dataRoot);
         Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
 
         // Satellite elements (CelesTrak stations) - daily product; refreshed on
         // every naif run regardless of the 24h throttle (cheap, ~120 rows).
         // Gate-before-activate: the staged set must pass sat-gate to go active.
-        var ommExit = await Jobs.RunSatelliteElementsRefreshAsync(dbPath, dataRoot,
+        var ommExit = await Jobs.RunSatelliteElementsRefreshAsync(config, dataRoot,
             gate: v => Task.FromResult(SatGate(v) == 0));
         Console.WriteLine(ommExit == 0 ? "naif: satellite-elements refresh OK" : "naif: satellite-elements refresh FAIL");
 
         // Leap seconds (IERS) - changes only when a leap second is announced;
         // kept fresh on every naif run (cheap, ~5 KB).
-        var leapExit = await Jobs.RunLeapSecondsJobAsync(dbPath, dataRoot);
+        var leapExit = await Jobs.RunLeapSecondsJobAsync(config, dataRoot);
         Console.WriteLine(leapExit == 0 ? "naif: leap-seconds refresh OK" : "naif: leap-seconds refresh FAIL");
 
         // Star catalog - ingest once if not active yet (the HYG catalog is static;
         // this gap-fill runs on every naif invocation regardless of the throttle,
         // but only acts when the dataset is missing). Gate-before-activate.
         var starExit = 0;
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(dbPath));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         if (registry.ActiveVersion("star-catalog-hyg") is null)
         {
             Console.WriteLine("naif: star catalog not active - ingesting...");
-            starExit = await Jobs.RunStarCatalogJobAsync(dbPath, dataRoot,
+            starExit = await Jobs.RunStarCatalogJobAsync(config, dataRoot,
                 gate: async v => await StarGate("/data/fixtures", v) == 0);
             Console.WriteLine(starExit == 0 ? "naif: star-catalog ingest OK" : "naif: star-catalog ingest FAIL");
         }

@@ -4,6 +4,7 @@ using Astronomy.Infrastructure.Registry;
 using Astronomy.Modules.Satellites.Application;
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Astronomy.IntegrationTests;
@@ -15,11 +16,13 @@ public class SatelliteIngestionFlowTests : IDisposable
     private readonly string _db = Path.Combine(Path.GetTempPath(), $"sat-flow-{Guid.NewGuid():N}.db");
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"sat-root-{Guid.NewGuid():N}");
 
+    private static AstronomyDbConfig Config(string path) => AstronomyDbConfig.FromValues("sqlite", null, path);
+
     public SatelliteIngestionFlowTests()
     {
         Directory.CreateDirectory(_root);
-        InfrastructureRegistrar.MigrateRegistry(_db);
-        SatelliteStore.EnsureSchema(_db);
+        InfrastructureRegistrar.EnsureSchema(Config(_db));
+        SatelliteStore.EnsureSchema(Config(_db));
     }
 
     public void Dispose()
@@ -30,10 +33,10 @@ public class SatelliteIngestionFlowTests : IDisposable
     }
 
     private ServiceProvider BuildServices() => new ServiceCollection()
-        .AddAstronomyInfrastructure(_db, _root)
+        .AddAstronomyInfrastructure(Config(_db), _root)
         .AddSingleton(sp => Astronomy.Infrastructure.Time.TimeDatasetLoaders.CreateTimeScaleConverter(
             sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetCatalog>(), _root))
-        .AddSatellitesModule(_db)
+        .AddSatellitesModule(Config(_db))
         .BuildServiceProvider();
 
     private static string Row(string norad, string name, DateTimeOffset epoch) =>
@@ -83,7 +86,7 @@ public class SatelliteIngestionFlowTests : IDisposable
         Directory.CreateDirectory(dir);
         await File.WriteAllTextAsync(Path.Combine(dir, "eop-ut1.csv"), "mjd,ut1_minus_utc_seconds\n60814.0,0.3660000\n");
 
-        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(_db));
+        var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(Config(_db)));
         await registry.StageAsync("eop-ut1", "v1", "x");
         var catalog = new DatasetCatalog(registry, _root);
 

@@ -1,6 +1,7 @@
 using Astronomy.Modules.Satellites.Application;
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Astronomy.SharedKernel.Time;
 
 namespace Astronomy.UnitTests;
@@ -9,6 +10,8 @@ public class SatelliteTests
 {
     private const string IssLine1 = "1 25544U 98067A   08264.51782528 -.00002182  00000-0 -11606-4 0  2927";
     private const string IssLine2 = "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.72125391563537";
+
+    private static AstronomyDbConfig Config(string path) => AstronomyDbConfig.FromValues("sqlite", null, path);
 
     private static OrbitalElementRow Iss() => new(
         "ISS (ZARYA)", "25544",
@@ -187,10 +190,10 @@ public class SatelliteTests
         var db = Path.Combine(Path.GetTempPath(), $"sat-stale-{Guid.NewGuid():N}.db");
         try
         {
-            SatelliteStore.EnsureSchema(db);
+            SatelliteStore.EnsureSchema(Config(db));
             var stale = Iss() with { EpochUtc = DateTimeOffset.UtcNow.AddDays(-5) };
-            SatelliteStore.WriteElements(db, "test", [stale]);
-            var service = new SatelliteService(db, new StubSatelliteRegistry(),
+            SatelliteStore.WriteElements(Config(db), "test", [stale]);
+            var service = new SatelliteService(Config(db), new StubSatelliteRegistry(),
                 new TimeScaleConverter(LeapSecondTable.Default, []));
             var result = await service.GetPositionAsync("25544", DateTimeOffset.UtcNow,
                 ObserverLocation.FromDegrees(59.9, 10.7, 0), false, CancellationToken.None);
@@ -218,9 +221,9 @@ public class SatelliteTests
         var db = Path.Combine(Path.GetTempPath(), $"sat-noeop-{Guid.NewGuid():N}.db");
         try
         {
-            SatelliteStore.EnsureSchema(db);
-            SatelliteStore.WriteElements(db, "test", [Iss()]);
-            var service = new SatelliteService(db, new StubSatelliteRegistry(),
+            SatelliteStore.EnsureSchema(Config(db));
+            SatelliteStore.WriteElements(Config(db), "test", [Iss()]);
+            var service = new SatelliteService(Config(db), new StubSatelliteRegistry(),
                 new TimeScaleConverter(LeapSecondTable.Default, []));
             var result = await service.GetPositionAsync("25544", DateTimeOffset.UtcNow,
                 ObserverLocation.FromDegrees(59.9, 10.7, 0), false, CancellationToken.None);
@@ -291,9 +294,9 @@ public class SatelliteTests
         var fixture = Path.Combine(AppContext.BaseDirectory, "fixtures", "iss-stations-omm.csv");
         var rows = ParseOmm(fixture);
         var db = Path.Combine(Path.GetTempPath(), $"sat-{Guid.NewGuid():N}.db");
-        SatelliteStore.EnsureSchema(db);
-        SatelliteStore.WriteElements(db, "test", rows);
-        return new SatelliteService(db, new StubSatelliteRegistry(), new TimeScaleConverter(LeapSecondTable.Default, []));
+        SatelliteStore.EnsureSchema(Config(db));
+        SatelliteStore.WriteElements(Config(db), "test", rows);
+        return new SatelliteService(Config(db), new StubSatelliteRegistry(), new TimeScaleConverter(LeapSecondTable.Default, []));
     }
 
     private static List<OrbitalElementRow> ParseOmm(string path)

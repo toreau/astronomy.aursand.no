@@ -1,5 +1,6 @@
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Astronomy.SharedKernel.Time;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -15,15 +16,15 @@ internal sealed class SatelliteService : ISatelliteService
 
     private static readonly TimeSpan ElementsCacheTtl = TimeSpan.FromSeconds(60);
 
-    private readonly string _dbPath;
+    private readonly AstronomyDbConfig _config;
     private readonly IDatasetRegistry _registry;
     private readonly TimeScaleConverter _timeScale;
     private readonly IOrbitalPropagator _propagator;
     private readonly IMemoryCache? _cache;
 
-    public SatelliteService(string dbPath, IDatasetRegistry registry, TimeScaleConverter timeScale, IOrbitalPropagator? propagator = null, IMemoryCache? cache = null)
+    public SatelliteService(AstronomyDbConfig config, IDatasetRegistry registry, TimeScaleConverter timeScale, IOrbitalPropagator? propagator = null, IMemoryCache? cache = null)
     {
-        _dbPath = dbPath;
+        _config = config;
         _registry = registry;
         _timeScale = timeScale;
         _propagator = propagator ?? new OneSgp4Propagator();
@@ -79,7 +80,7 @@ internal sealed class SatelliteService : ISatelliteService
     public Task<IngestionStatus> GetStatusAsync(CancellationToken ct)
     {
         var active = _registry.ActiveVersion(DatasetName);
-        var rows = active is null ? [] : SatelliteStore.ReadElements(_dbPath, active.Version);
+        var rows = active is null ? [] : SatelliteStore.ReadElements(_config, active.Version);
         var (fresh, warn, degraded, refuse) = SatelliteStore.Freshness(rows, DateTimeOffset.UtcNow);
         return Task.FromResult(new IngestionStatus(active?.Version, rows.Count, fresh, warn, degraded, refuse));
     }
@@ -99,10 +100,10 @@ internal sealed class SatelliteService : ISatelliteService
         var active = _registry.ActiveVersion(DatasetName);
         if (active is null)
             throw new SatelliteElementsUnavailableException("satellite-elements dataset not ingested");
-        var cacheKey = $"{DatasetName}:{_dbPath}:{active.Version}";
+        var cacheKey = $"{DatasetName}:{(_config.IsPostgres ? "pg" : _config.SqlitePath)}:{active.Version}";
         if (_cache is not null && _cache.TryGetValue(cacheKey, out IReadOnlyList<OrbitalElementRow>? cached) && cached is not null)
             return (active.Version, cached);
-        var rows = SatelliteStore.ReadElements(_dbPath, active.Version);
+        var rows = SatelliteStore.ReadElements(_config, active.Version);
         if (rows.Count == 0)
             throw new SatelliteElementsUnavailableException($"satellite-elements dataset {active.Version} has no elements");
         _cache?.Set(cacheKey, rows, ElementsCacheTtl);

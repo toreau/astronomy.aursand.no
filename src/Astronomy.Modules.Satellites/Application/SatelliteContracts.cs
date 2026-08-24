@@ -1,6 +1,7 @@
 using Astronomy.SharedKernel;
 using Astronomy.SharedKernel.Coordinates;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 using Astronomy.SharedKernel.Time;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
@@ -82,12 +83,12 @@ public interface ISatelliteService
 
 public static class SatellitesModuleRegistrar
 {
-    public static IServiceCollection AddSatellitesModule(this IServiceCollection services, string dbPath)
+    public static IServiceCollection AddSatellitesModule(this IServiceCollection services, AstronomyDbConfig config)
     {
         services.AddSingleton<ISatelliteElementIngestionService>(sp =>
-            new SatelliteElementIngestionService(dbPath, sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetRegistry>()));
+            new SatelliteElementIngestionService(config, sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetRegistry>()));
         services.AddSingleton<ISatelliteService>(sp =>
-            new SatelliteService(dbPath,
+            new SatelliteService(config,
                 sp.GetRequiredService<Astronomy.SharedKernel.Datasets.IDatasetRegistry>(),
                 sp.GetRequiredService<TimeScaleConverter>(),
                 cache: sp.GetService<IMemoryCache>()));

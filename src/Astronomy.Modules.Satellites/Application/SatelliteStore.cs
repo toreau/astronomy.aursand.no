@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Astronomy.SharedKernel.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -32,10 +33,13 @@ public class SatelliteDbContext : DbContext
 
 public class SatelliteDesignFactory : IDesignTimeDbContextFactory<SatelliteDbContext>
 {
+    // Migrations are Postgres-owned (Option A): always design against Npgsql so a
+    // `dotnet ef` run can never silently generate a SQLite migration. The connection
+    // string is a design-time placeholder - `migrations add` never opens it.
     public SatelliteDbContext CreateDbContext(string[] args)
     {
         var options = new DbContextOptionsBuilder<SatelliteDbContext>()
-            .UseSqlite($"Data Source={Path.Combine(Path.GetTempPath(), "satellite-design.db")}")
+            .UseNpgsql("Host=localhost;Database=astronomy-design;Username=astronomy;Password=astronomy")
             .Options;
         return new SatelliteDbContext(options);
     }
@@ -49,9 +53,12 @@ public static class SatelliteStore
         PropertyNameCaseInsensitive = true,
     };
 
-    internal static SatelliteDbContext CreateContext(string dbPath)
+    internal static SatelliteDbContext CreateContext(AstronomyDbConfig config)
     {
-        var conn = new SqliteConnection($"Data Source={dbPath}");
+        if (config.IsPostgres)
+            return new SatelliteDbContext(new DbContextOptionsBuilder<SatelliteDbContext>()
+                .UseNpgsql(config.ConnectionString!).Options);
+        var conn = new SqliteConnection($"Data Source={config.SqlitePath}");
         conn.Open();
         using (var cmd = conn.CreateCommand())
         {
@@ -62,15 +69,26 @@ public static class SatelliteStore
         return new SatelliteDbContext(options);
     }
 
-    public static void EnsureSchema(string dbPath)
+    public static void EnsureSchema(AstronomyDbConfig config)
     {
-        using var ctx = CreateContext(dbPath);
-        ctx.Database.Migrate();
+        using var ctx = CreateContext(config);
+        if (config.IsPostgres)
+        {
+            ctx.Database.Migrate();
+            return;
+        }
+        // Same shared-SQLite-file caveat as the registry: EnsureCreated is all-or-nothing
+        // per database, so create this model's tables when missing (idempotent).
+        const string primaryTable = "Elements";
+        var exists = ctx.Database.SqlQueryRaw<int>(
+            "SELECT COUNT(*) AS Value FROM sqlite_master WHERE type='table' AND name={0}", primaryTable).First() > 0;
+        if (!exists)
+            ctx.Database.ExecuteSqlRaw(ctx.Database.GenerateCreateScript());
     }
 
-    public static void WriteElements(string dbPath, string version, IReadOnlyList<OrbitalElementRow> rows)
+    public static void WriteElements(AstronomyDbConfig config, string version, IReadOnlyList<OrbitalElementRow> rows)
     {
-        using var ctx = CreateContext(dbPath);
+        using var ctx = CreateContext(config);
         var existing = ctx.Elements.Where(e => e.DatasetVersion == version).ToList();
         ctx.Elements.RemoveRange(existing);
         ctx.Elements.AddRange(rows.Select(r => new SatelliteElementRecord
@@ -84,16 +102,9 @@ public static class SatelliteStore
         ctx.SaveChanges();
     }
 
-    public static IReadOnlyList<OrbitalElementRow> ReadElements(string dbPath)
+    public static IReadOnlyList<OrbitalElementRow> ReadElements(AstronomyDbConfig config, string datasetVersion)
     {
-        using var ctx = CreateContext(dbPath);
-        var rows = ctx.Elements.AsNoTracking().ToList();
-        return rows.Select(FromJson).ToList();
-    }
-
-    public static IReadOnlyList<OrbitalElementRow> ReadElements(string dbPath, string datasetVersion)
-    {
-        using var ctx = CreateContext(dbPath);
+        using var ctx = CreateContext(config);
         var rows = ctx.Elements.AsNoTracking().Where(e => e.DatasetVersion == datasetVersion).ToList();
         return rows.Select(FromJson).ToList();
     }

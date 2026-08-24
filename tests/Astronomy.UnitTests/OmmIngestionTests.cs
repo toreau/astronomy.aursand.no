@@ -1,11 +1,14 @@
 using Astronomy.Modules.Satellites.Application;
 using Astronomy.SharedKernel.Datasets;
+using Astronomy.SharedKernel.Persistence;
 
 namespace Astronomy.UnitTests;
 
 public class OmmIngestionTests
 {
     private const string Header = "OBJECT_NAME,OBJECT_ID,EPOCH,MEAN_MOTION,ECCENTRICITY,INCLINATION,RA_OF_ASC_NODE,ARG_OF_PERICENTER,MEAN_ANOMALY,EPHEMERIS_TYPE,CLASSIFICATION_TYPE,NORAD_CAT_ID,ELEMENT_SET_NO,REV_AT_EPOCH,BSTAR,MEAN_MOTION_DOT,MEAN_MOTION_DDOT";
+
+    private static AstronomyDbConfig Config(string path) => AstronomyDbConfig.FromValues("sqlite", null, path);
 
     private static string Line(DateTimeOffset epoch, string norad = "25544", string mm = "15.49332738") =>
         $"ISS (ZARYA),1998-067A,{epoch:yyyy-MM-ddTHH:mm:ss.ffffff}, {mm},0.00072249,51.6316,64.4821,9.2337,350.8783,0,U,{norad},999,57913,0.00014146099,0.00007444,0";
@@ -74,7 +77,7 @@ public class OmmIngestionTests
     public async Task StageFileAsync_TooFewRows_Rejected()
     {
         var db = TempDb();
-        SatelliteStore.EnsureSchema(db);
+        SatelliteStore.EnsureSchema(Config(db));
         try
         {
             var csv = Path.GetTempFileName();
@@ -86,7 +89,7 @@ public class OmmIngestionTests
                 await File.WriteAllLinesAsync(csv, lines);
 
                 var registry = new RecordingRegistry();
-                var service = new SatelliteElementIngestionService(db, registry);
+                var service = new SatelliteElementIngestionService(Config(db), registry);
                 var exit = await service.StageFileAsync("20260805", csv);
 
                 Assert.Equal(1, exit);
@@ -101,7 +104,7 @@ public class OmmIngestionTests
     public async Task StageFileAsync_ValidRows_StagesAndActivates()
     {
         var db = TempDb();
-        SatelliteStore.EnsureSchema(db);
+        SatelliteStore.EnsureSchema(Config(db));
         try
         {
             var csv = Path.GetTempFileName();
@@ -113,7 +116,7 @@ public class OmmIngestionTests
                 await File.WriteAllLinesAsync(csv, lines);
 
                 var registry = new RecordingRegistry();
-                var service = new SatelliteElementIngestionService(db, registry);
+                var service = new SatelliteElementIngestionService(Config(db), registry);
                 var exit = await service.StageFileAsync("20260805", csv);
 
                 Assert.Equal(0, exit);
@@ -123,7 +126,7 @@ public class OmmIngestionTests
                 var status = await service.GetStatusAsync();
                 Assert.Equal("20260805", status.ActiveVersion);
                 Assert.Equal(12, status.ElementCount);
-                Assert.Equal(12, SatelliteStore.ReadElements(db, "20260805").Count);
+                Assert.Equal(12, SatelliteStore.ReadElements(Config(db), "20260805").Count);
             }
             finally { File.Delete(csv); }
         }
