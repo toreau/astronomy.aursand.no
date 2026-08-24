@@ -4,6 +4,36 @@ All notable changes, grouped by date. Format inspired by Keep a Changelog
 (keepachangelog.com); sections: Core · Bugs fixed · Performance ·
 Infrastructure & ops · Tests · Documentation · Dependencies.
 
+## 2026-08-24
+
+### Core
+- Production storage switched SQLite → PostgreSQL (dev/tests stay SQLite). `AstronomyDbConfig`
+  (`ASTRONOMY_DB_PROVIDER` `sqlite`|`postgres`, default sqlite; `ASTRONOMY_DB_CONNECTION` for
+  Postgres) routes every DB access; provider-aware `EnsureSchema` (Postgres `Migrate()`,
+  SQLite idempotent model script); health probe now provider-neutral via EF `CanConnect`.
+- Npgsql migrations replace the SQLite sets for both contexts (registry + satellite elements);
+  design-time factories pinned to Npgsql so `dotnet ef` always targets the production provider.
+- Worker heartbeat + `jobs`/`host-gates` run against the configured provider; `backup` CLI is
+  now SQLite-only (prod backups delegated to Coolify's Postgres resource — none configured).
+
+### Infrastructure & ops
+- Coolify: `astronomy-db` PostgreSQL created (internal, `postgres:16-alpine`, uuid hostname on
+  the coolify network, `SSL Mode=Disable`); api + worker deployed with `ASTRONOMY_DB_PROVIDER`
+  + `ASTRONOMY_DB_CONNECTION`; `/health/ready` → `db: ok` in production.
+- Old `/data/astronomy.db` left in place but unused; registry/elements data is re-fetchable by
+  the scheduled `naif` / `omm-refresh` jobs (no migration of existing data needed).
+
+### Dependencies
+- Microsoft.* 10.0.10 → 10.0.11 (OpenApi, Data.Sqlite, EF Core Design/Sqlite, DI.Abstractions,
+  Mvc.Testing); Microsoft.OpenApi 2.11.0 → 2.12.2 (2.x — AspNetCore.OpenApi pins `< 3.0.0`).
+- Added Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3 (Infrastructure, Satellites) + Npgsql 10.0.3
+  (DataIngestion). Pins unchanged: SQLitePCLRaw 3.0.5, accuracy engines, SGP.NET, NodaTime.
+  Test-tooling majors (Test.Sdk 18 / runner 4 / coverlet 10) deferred.
+
+### Tests
+- Suite 1,366 → 1,379; `AstronomyDbConfig` parsing covered; store/registry/integration tests
+  drive the config-based (SQLite) path.
+
 ## 2026-08-06
 
 ### Core

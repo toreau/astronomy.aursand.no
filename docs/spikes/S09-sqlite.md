@@ -42,4 +42,5 @@ pinning: SQLitePCLRaw.bundle_e_sqlite3 3.0.5 explicit reference
 ## Decisions feeding
 
 - ADR 15 (final): SQLite + EF Core; worker = only writer; API = read-only connections; `astronomy-cli db migrate` = EF `Migrate()` (deploy-time), `astronomy-cli db backup` = `BackupDatabase`.
+- **ADR 15 amendment (2026-08-24):** production storage moved to PostgreSQL (Coolify `astronomy-db`); SQLite remains the dev/test provider. Storage is provider-driven via `AstronomyDbConfig` (`ASTRONOMY_DB_PROVIDER` + `ASTRONOMY_DB_CONNECTION`); Npgsql migrations are Postgres-owned (design factories pinned to Npgsql); SQLite dev schema uses an idempotent model script (`EnsureSchema`), not migrations. API connects read-write on Postgres (no SQLite `Mode=ReadOnly` equivalent); prod backups delegated to the Coolify Postgres resource. See repo `AGENTS.md` → Operations.
 - Phase 1 DB setup + `S09` code promoted as the reference pattern.

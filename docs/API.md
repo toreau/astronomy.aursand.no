@@ -65,9 +65,10 @@ curl https://astronomy.aursand.no/health/ready
 }
 ```
 
-Readiness probe: verifies the database opens and the registry schema exists,
-then reports each component (reference kernels, star catalog, active dataset
-versions, satellite elements). Returns 200 whenever the database is healthy —
+Readiness probe: verifies the database is reachable and the registry schema exists
+(provider-neutral — SQLite in dev/tests, PostgreSQL in production), then reports each
+component (reference kernels, star catalog, active dataset versions, satellite
+elements). Returns 200 whenever the database is healthy —
 components report `unavailable (...)` without failing the probe — and
 503 with `"status": "not-ready"` when the database or schema is broken.
 

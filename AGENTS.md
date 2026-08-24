@@ -21,7 +21,7 @@ refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
 
 - 10 src projects: `Astronomy.Api` (minimal APIs, per-domain `Endpoints/` modules), 6 domain
   modules (Ephemeris, Stars, Satellites, Time, Calendars, Almanac), `Astronomy.Infrastructure`
-  (versioned dataset registry, SQLite, loaders), `Astronomy.SharedKernel`, worker CLI
+  (versioned dataset registry, storage providers, loaders), `Astronomy.SharedKernel`, worker CLI
   `Astronomy.DataIngestion`. 5 test projects (Accuracy/Unit/API/Architecture/Integration).
 - Accuracy tiers: `consumer` = Astronomy Engine 2.1.19 (VSOP87, ≤ 22.5″); `advanced` =
   SPICE DE441 + ERFA (≤ 10″); `reference` = + IAU2000A (≤ 1″).
@@ -45,6 +45,15 @@ refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
 - Coolify scheduled-task commands are capped at 255 chars; Coolify native health checks stay
   **off** (no curl in the image — apt is very slow on the host).
 - Volume `/data/astronomy` is root-owned → the worker runs as root; api runs rootless uid 10001.
+- Storage is dual-provider via `AstronomyDbConfig` (`Astronomy.SharedKernel.Persistence`):
+  dev/tests run SQLite (`ASTRONOMY_DB_PATH`), production runs PostgreSQL (Coolify `astronomy-db`,
+  `ASTRONOMY_DB_PROVIDER=postgres` + `ASTRONOMY_DB_CONNECTION`). **Npgsql migrations are
+  Postgres-owned** (design-time factories are pinned to Npgsql); the SQLite dev schema is an
+  idempotent model-script `EnsureSchema` — both EF contexts share one SQLite file, so plain
+  `EnsureCreated` would silently skip the second context's tables.
+- Postgres connects over the internal coolify network at the DB **uuid** hostname (not the DB
+  name), port 5432, `SSL Mode=Disable` (the server runs ssl=off despite `ssl_mode: require`).
+  Worker logs a harmless `libgssapi_krb5.so.2` load warning (Npgsql Kerberos probe).
 - Kernel reload contract: worker restarts the api via the Coolify API
   (`COOLIFY_API_URL`/`COOLIFY_API_TOKEN`/`COOLIFY_API_APP_UUID`) when kernel hashes change;
   without those env vars, kernel changes apply at the next deploy.
@@ -67,9 +76,10 @@ refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
 
 - Health: `/health/live` (liveness); `/health/ready` deep probe (db, kernels + `kernelHashes`,
   star catalog, datasets, satellite elements) — uptime-kuma uses ready.
-- Env: `ASTRONOMY_DB_PATH` (default `/data/astronomy.db`), `ASTRONOMY_DATA_ROOT` (`/data`),
-  `ASTRONOMY_KERNEL_PATH` (`/data/kernels`); worker-only `COOLIFY_API_URL`/`TOKEN`/`APP_UUID`,
-  `ASTRONOMY_API_URL`.
+- Env: `ASTRONOMY_DB_PROVIDER` (`sqlite`|`postgres`, default `sqlite`), `ASTRONOMY_DB_PATH`
+  (default `/data/astronomy.db`, SQLite), `ASTRONOMY_DB_CONNECTION` (Postgres only),
+  `ASTRONOMY_DATA_ROOT` (`/data`), `ASTRONOMY_KERNEL_PATH` (`/data/kernels`); worker-only
+  `COOLIFY_API_URL`/`TOKEN`/`APP_UUID`, `ASTRONOMY_API_URL`.
 - **No rate limiting** (deferred by design; passes endpoint is the CPU-heavy one), no auth.
 - Scheduled: `naif` weekly Sun 03:00 UTC (kernels + datasets + reference gate),
   `omm-refresh` daily 06:00 UTC (TLE elements) — both gate-before-activate; failed refresh
