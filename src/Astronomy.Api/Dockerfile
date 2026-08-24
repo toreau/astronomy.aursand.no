@@ -17,8 +17,12 @@ RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/arturania
     && git checkout 53bce326267dd2d6d567de92b15869c9ed7d0629 \
     && git sparse-checkout set src include lib
 WORKDIR /spice-src/src
+# mk_linux.csh hardcodes -m64 (x86-only), which gcc rejects on aarch64.
+# Removing it is arch-neutral on x86_64 (gcc defaults to LP64) and required
+# for arm64 builds, so the image is multi-arch (amd64 for prod, arm64 for kind).
 RUN mkdir -p ../lib ../exe \
     && sed -i '3252,3255d' ../include/SpiceZpr.h \
+    && sed -i 's/-m64//g' mk_linux.csh \
     && csh mk_linux.csh
 WORKDIR /spice-src
 RUN gcc -shared -fPIC -o /libcspice.so \
@@ -31,6 +35,11 @@ RUN git clone --depth 1 --branch v2.0.1 https://github.com/liberfa/erfa.git /erf
     && find /erfa/build/src -name 'liberfa.so.1*' -exec cp {} /liberfa.so \;
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# .NET SslStream requires libgssapi_krb5.so.2 (GSSAPI) for HTTPS; the minimal
+# aspnet runtime image omits it, so install it for outbound HTTPS to work.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --create-home appuser
 USER appuser
 WORKDIR /app
