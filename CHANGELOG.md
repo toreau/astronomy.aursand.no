@@ -4,6 +4,11 @@ All notable changes, grouped by date. Format inspired by Keep a Changelog
 (keepachangelog.com); sections: Core · Bugs fixed · Performance ·
 Infrastructure & ops · Tests · Documentation · Dependencies.
 
+## 2026-08-25
+
+### Infrastructure & ops
+- **CI builds multi-arch images** (`.github/workflows/ci.yml`): the `docker` job is now a matrix (amd64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm` native runner) pushing per-arch tags (`main-<sha>-{amd64,arm64}`, `latest-{amd64,arm64}`); a new `merge` job combines the multi-arch manifest (`main-<sha>`, `latest`) with `buildx imagetools create`, resolves the manifest digest, and dispatches `astro-image-pushed` `{sha, digest}` to the k8s-research GitOps repo (via `K8S_RESEARCH_PAT`) which bumps its pinned digest and lets ArgoCD auto-sync the local kind cluster. No developer machine is part of the loop. The Dockerfile was already arch-neutral (cspice `-m64` patch).
+
 ## 2026-08-24
 
 ### Core
