@@ -118,7 +118,7 @@ Errors follow RFC 7807 (`application/problem+json`):
 ```
 Astronomy.Api (ASP.NET Core, minimal APIs)
   └── modules: Ephemeris · Stars · Satellites · Time · Calendars · Almanac
-  └── Astronomy.Infrastructure (dataset registry, loaders, SQLite)
+  └── Astronomy.Infrastructure (dataset registry, storage providers [SQLite dev / PostgreSQL prod], loaders)
   └── Astronomy.SharedKernel (contracts, coordinates, time scales)
 Astronomy.DataIngestion (worker CLI: ingest jobs + host verification gates)
 ```
@@ -158,12 +158,26 @@ dotnet test Astronomy.slnx -c Release
 
 ## Deployment
 
-Deployed with Coolify as two apps sharing a `/data` volume:
+Production runs on Coolify (`astronomy.aursand.no`) as two apps from the same
+repo (dockerfile build pack), sharing a `/data` volume for kernels and datasets:
 
-- `api` (rootless, uid 10001) — the HTTP service
+- `api` (rootless, uid **150** — `useradd --uid 150`) — the HTTP service
 - `worker` (root) — ingestion jobs and gates
 
-Environment: `ASTRONOMY_DB_PATH` (default `/data/astronomy.db`),
+The dataset **registry** lives in PostgreSQL (`astronomy-db`, Coolify) in
+production and SQLite in dev/tests — see "Storage" below.
+
+CI builds **multi-arch** images (amd64 + arm64 matrix) to
+`ghcr.io/toreau/astronomy-api` (`main-<sha>`, `latest`) and **SLSA-attests** the
+merged manifest (build provenance + SPDX SBOM via `actions/attest`), verifying
+producer-side before dispatching a digest bump to the k8s-research GitOps repo
+(where Kyverno enforces the attestation at pod admission). Production itself
+builds from git via Coolify. The repo is **public** (GitHub artifact
+attestations require public or Enterprise Cloud).
+
+Environment: `ASTRONOMY_DB_PROVIDER` (`sqlite`|`postgres`, default `sqlite`),
+`ASTRONOMY_DB_PATH` (default `/data/astronomy.db`, SQLite),
+`ASTRONOMY_DB_CONNECTION` (Postgres, Npgsql keyword form),
 `ASTRONOMY_DATA_ROOT` (default `/data`), `ASTRONOMY_KERNEL_PATH` (default
 `/data/kernels`). The Dockerfiles build CSPICE + ERFA in a dedicated stage
 (one-time apt cost, layer-cached). See `docs/spikes/S11-deploy.md` for depth.

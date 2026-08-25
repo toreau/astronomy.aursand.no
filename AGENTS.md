@@ -5,6 +5,11 @@ bright stars and satellites, with accuracy tiers validated against JPL Horizons 
 .NET 10 ASP.NET Core **modular monolith**. Coolify: api `jk87r6rrgoegw3s6v3hz4ulu`
 (rootless, :8080, public) + worker `p47lnt171dhf6kec7dn2jbtj` (root, no FQDN; scheduled
 refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
+CI builds **multi-arch** (amd64+arm64) images to `ghcr.io/toreau/astronomy-api`
+and **SLSA-attests** the merged manifest (build provenance + SPDX SBOM,
+`actions/attest`); the repo is **public** (GitHub artifact attestations require
+public/Enterprise). The k8s-research GitOps loop gates digest bumps on the
+attestation and enforces it in-cluster via Kyverno (`ImageValidatingPolicy`).
 
 ## Commands
 
@@ -44,7 +49,7 @@ refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
   upstreams move.
 - Coolify scheduled-task commands are capped at 255 chars; Coolify native health checks stay
   **off** (no curl in the image — apt is very slow on the host).
-- Volume `/data/astronomy` is root-owned → the worker runs as root; api runs rootless uid 10001.
+- Volume `/data/astronomy` is root-owned → the worker runs as root; api runs rootless uid **150** (`useradd --uid 150` in the Dockerfile).
 - Storage is dual-provider via `AstronomyDbConfig` (`Astronomy.SharedKernel.Persistence`):
   dev/tests run SQLite (`ASTRONOMY_DB_PATH`), production runs PostgreSQL (Coolify `astronomy-db`,
   `ASTRONOMY_DB_PROVIDER=postgres` + `ASTRONOMY_DB_CONNECTION`). **Npgsql migrations are

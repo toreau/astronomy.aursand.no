@@ -11,6 +11,9 @@ Infrastructure & ops · Tests · Documentation · Dependencies.
 - **CI builds multi-arch images** (`.github/workflows/ci.yml`): the `docker` job is now a matrix (amd64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm` native runner) pushing per-arch tags (`main-<sha>-{amd64,arm64}`, `latest-{amd64,arm64}`); a new `merge` job combines the multi-arch manifest (`main-<sha>`, `latest`) with `buildx imagetools create`, resolves the manifest digest, and dispatches `astro-image-pushed` `{sha, digest}` to the k8s-research GitOps repo (via `K8S_RESEARCH_PAT`) which bumps its pinned digest and lets ArgoCD auto-sync the local kind cluster. No developer machine is part of the loop. The Dockerfile was already arch-neutral (cspice `-m64` patch).
 - **SLSA attestation of the merged image** (SLSA-1): the `merge` job now generates an SPDX SBOM (syft, `-amd64` variant) and creates two GitHub-native attestations on the merged manifest digest via `actions/attest@v4` — SLSA build provenance + SBOM — both with `push-to-registry: true` (attestations land in GHCR **and** the repo attestations API), then **verifies producer-side** with `gh attestation verify` (SLSA + SPDX predicate types) before dispatching. Requires `id-token: write` + `attestations: write`. `gh attestation verify` needs `GH_TOKEN: ${{ github.token }}` in the Actions environment (the CLI refuses to run without it). Repo is **public** (artifact attestations on private repos require GitHub Enterprise Cloud).
 
+### Documentation
+- Docs audit (k8s-research + astronomy): README updated for dual-provider storage (Postgres prod / SQLite dev), uid **150**, and the multi-arch SLSA-attested CI/loop; AGENTS.md gained the SLSA/multi-arch/public note; API.md fixed an internal inconsistency (`satelliteElements` 122 → 22); live-verification.md flagged as a dated snapshot with the ≤1″-vs-≤2″ scope note. See `Work Logs/2026-08-25 k8s-research + astronomy docs audit — gap report`.
+
 ## 2026-08-24
 
 ### Core

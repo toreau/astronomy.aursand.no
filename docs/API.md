@@ -61,7 +61,7 @@ curl https://astronomy.aursand.no/health/ready
     "star-catalog-hyg": "v38",
     "satellite-elements": "20260805"
   },
-  "satelliteElements": "ok (20260805, 122 elements)"
+  "satelliteElements": "ok (20260805, 22 elements)"
 }
 ```
 

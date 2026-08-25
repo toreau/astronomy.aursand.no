@@ -1,5 +1,14 @@
 # Live endpoint verification — 2026-08-06 (updated after parallax fix)
 
+> **Note (2026-08-25):** this is a point-in-time verification report. The
+> dataset registry was reset by the PostgreSQL switch (08-24) and is not yet
+> repopulated, so star/satellite endpoints currently return 503 — re-run
+> `spikes/S12-live-verification/` after the next successful `naif`/`omm-refresh`.
+> Accuracy caveat: the "reference ≤ 2″" measured here is the **live spot-check**
+> against Horizons (5 epochs × 9 bodies); the README's "≤ 1″" is the full
+> 1900–2100 validation grid (q1) from the host gate. Both are correct for their
+> respective scopes.
+
 Independent comparison of every live endpoint on `https://astronomy.aursand.no`
 against external sources (JPL Horizons API, sunrise-sunset.org, IERS, VizieR
 HIP, USNO tables, python `sgp4`, `skyfield`). Harness: `spikes/S12-live-verification/`.
