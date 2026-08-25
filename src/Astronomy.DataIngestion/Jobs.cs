@@ -14,6 +14,12 @@ public static class Jobs
 {
     private const string EopSourceUrl = "https://maia.usno.navy.mil/ser7/ser7.dat";
 
+    private static readonly string[] EopFinalsCandidateUrls =
+    {
+        "https://datacenter.iers.org/data/9/finals2000A.all",
+        "https://maia.usno.navy.mil/ser7/finals2000A.all",
+    };
+
     private const string LeapSecondsUrl = "https://hpiers.obspm.fr/iers/bul/bulc/ntp/leap-seconds.list";
 
     private static readonly string[] EopC04CandidateUrls =
@@ -26,29 +32,15 @@ public static class Jobs
     public static async Task<int> RunEopJobAsync(AstronomyDbConfig config, string dataRoot)
     {
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        string text;
-        try
-        {
-            text = await hc.GetStringAsync(EopSourceUrl);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"eop: fetch FAIL {ex.Message.Split('\n')[0]}");
-            return 1;
-        }
-        var samples = new List<(double Mjd, double Ut1MinusUtc)>();
-        foreach (var line in text.Split('\n'))
-        {
-            if (ParseSer7Line(line) is { } sample) samples.Add(sample);
-        }
+        var (samples, source) = await LoadEopUt1SamplesAsync(hc);
         if (samples.Count < 100)
         {
-            Console.WriteLine($"eop: REJECTED - only {samples.Count} samples parsed from ser7");
+            Console.WriteLine($"eop: REJECTED - only {samples.Count} samples parsed ({source})");
             return 1;
         }
         if (Math.Abs(samples[^1].Ut1MinusUtc) > 2.0)
         {
-            Console.WriteLine($"eop: REJECTED - implausible latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}");
+            Console.WriteLine($"eop: REJECTED - implausible latest UT1-UTC {samples[^1].Ut1MinusUtc:F4} ({source})");
             return 1;
         }
         var activeCsv = ActiveDatasetCsvPath(dataRoot, "eop-ut1", "eop-ut1.csv");
@@ -69,8 +61,74 @@ public static class Jobs
         var registry = new DatasetRegistry(() => InfrastructureRegistrar.CreateRegistryContext(config));
         await registry.StageAsync("eop-ut1", version, checksum);
         await registry.ActivateAsync("eop-ut1", version);
-        Console.WriteLine($"eop: {samples.Count} samples staged+activated as {version} (latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}s)");
+        Console.WriteLine($"eop: {samples.Count} samples staged+activated as {version} (source {source}; latest UT1-UTC {samples[^1].Ut1MinusUtc:F4}s)");
         return 0;
+    }
+
+    /// <summary>
+    /// Load UT1-UTC samples from USNO ser7, falling back to IERS Bulletin A
+    /// (finals2000A.all) when ser7 is unreachable or its latest value is
+    /// implausible (|UT1-UTC| &gt; 2 s). Returns the samples and the source used.
+    /// </summary>
+    private static async Task<(List<(double Mjd, double Ut1MinusUtc)> Samples, string Source)> LoadEopUt1SamplesAsync(HttpClient hc)
+    {
+        try
+        {
+            var text = await hc.GetStringAsync(EopSourceUrl);
+            var samples = ParseSer7Lines(text);
+            if (samples.Count >= 100 && Math.Abs(samples[^1].Ut1MinusUtc) <= 2.0)
+            {
+                Console.WriteLine($"eop: {samples.Count} samples parsed from ser7");
+                return (samples, "ser7");
+            }
+            Console.WriteLine(samples.Count < 100
+                ? $"eop: ser7 only {samples.Count} samples - falling back to IERS Bulletin A"
+                : $"eop: ser7 latest UT1-UTC {samples[^1].Ut1MinusUtc:F4} implausible - falling back to IERS Bulletin A");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"eop: ser7 fetch FAIL {ex.Message.Split('\n')[0]} - falling back to IERS Bulletin A");
+        }
+
+        foreach (var url in EopFinalsCandidateUrls)
+        {
+            try
+            {
+                var text = await hc.GetStringAsync(url);
+                var samples = ParseFinalsLines(text);
+                if (samples.Count >= 100)
+                {
+                    Console.WriteLine($"eop: {samples.Count} samples parsed from IERS Bulletin A ({url})");
+                    return (samples, "finals");
+                }
+                Console.WriteLine($"eop: Bulletin A ({url}) only {samples.Count} samples");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"eop: Bulletin A {url} FAIL {ex.Message.Split('\n')[0]}");
+            }
+        }
+        return ([], "none");
+    }
+
+    private static List<(double Mjd, double Ut1MinusUtc)> ParseSer7Lines(string text)
+    {
+        var samples = new List<(double Mjd, double Ut1MinusUtc)>();
+        foreach (var line in text.Split('\n'))
+        {
+            if (ParseSer7Line(line) is { } sample) samples.Add(sample);
+        }
+        return samples;
+    }
+
+    private static List<(double Mjd, double Ut1MinusUtc)> ParseFinalsLines(string text)
+    {
+        var samples = new List<(double Mjd, double Ut1MinusUtc)>();
+        foreach (var line in text.Split('\n'))
+        {
+            if (ParseFinalsLine(line) is { } sample) samples.Add(sample);
+        }
+        return samples;
     }
 
     public static async Task<int> RunEopC04JobAsync(AstronomyDbConfig config, string dataRoot)
@@ -195,6 +253,23 @@ public static class Jobs
         if (parts.Length < 2) return null;
         if (!double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) return null;
         if (!double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) return null;
+        return (mjd, dut1);
+    }
+
+    /// <summary>
+    /// Parse one IERS Bulletin A finals2000A.all line. Fixed-width layout:
+    /// MJD in columns 8-15, UT1-UTC in columns 59-68 (UT1 type in column 58).
+    /// Trailer/prediction rows with a blank UT1-UTC and malformed or out-of-range
+    /// values (MJD outside 40000-80000) return null.
+    /// </summary>
+    internal static (double Mjd, double Ut1MinusUtc)? ParseFinalsLine(string line)
+    {
+        if (line.Length < 68) return null;
+        var mjdText = line.Substring(7, 8);
+        if (!double.TryParse(mjdText, NumberStyles.Float, CultureInfo.InvariantCulture, out var mjd)) return null;
+        if (mjd is < 40000 or > 80000) return null;
+        var ut1Text = line.Substring(58, 10);
+        if (!double.TryParse(ut1Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var dut1)) return null;
         return (mjd, dut1);
     }
 

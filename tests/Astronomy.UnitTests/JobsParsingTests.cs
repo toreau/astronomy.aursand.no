@@ -133,6 +133,45 @@ public class JobsParsingTests
         Assert.Null(Jobs.ParseSer7Line("# comment line"));
     }
 
+    private static string FinalsLine(string mjd, string ut1) =>
+        new string(' ', 68)
+            .Remove(7, 8).Insert(7, mjd.PadRight(8))
+            .Remove(58, 10).Insert(58, ut1.PadRight(10));
+
+    [Fact]
+    public void ParseFinalsLine_ValidLine_ReturnsSample()
+    {
+        var sample = Jobs.ParseFinalsLine(FinalsLine("41685.00", " 0.8056163"));
+        Assert.NotNull(sample);
+        Assert.Equal(41685.00, sample.Value.Mjd, 2);
+        Assert.Equal(0.8056163, sample.Value.Ut1MinusUtc, 7);
+    }
+
+    [Fact]
+    public void ParseFinalsLine_RealFinalRow_Parses()
+    {
+        var line = "73 1 3 41685.00 I  0.118980 0.011039  0.135656 0.013616  I 0.8056163 0.0002710  3.5563 0.1916  P    -0.751    0.199    -0.701    0.300   .141000   .134000   .8044000   -18.636    -3.571  ";
+        var sample = Jobs.ParseFinalsLine(line);
+        Assert.NotNull(sample);
+        Assert.Equal(41685.00, sample.Value.Mjd, 2);
+        Assert.Equal(0.8056163, sample.Value.Ut1MinusUtc, 7);
+    }
+
+    [Fact]
+    public void ParseFinalsLine_TrailerWithBlankUt1_ReturnsNull()
+    {
+        Assert.Null(Jobs.ParseFinalsLine("271017 61695.00".PadRight(187)));
+    }
+
+    [Fact]
+    public void ParseFinalsLine_MalformedOrOutOfRange_ReturnNull()
+    {
+        Assert.Null(Jobs.ParseFinalsLine("too short"));
+        Assert.Null(Jobs.ParseFinalsLine(FinalsLine("not-mjd", " 0.8056163")));
+        Assert.Null(Jobs.ParseFinalsLine(FinalsLine("99999.00", " 0.8056163"))); // mjd > 80000
+        Assert.Null(Jobs.ParseFinalsLine(FinalsLine("41685.00", "      bad ")));  // bad ut1
+    }
+
     [Fact]
     public void ParseEopC04Line_ValidLine_ReturnsSampleWithPolarMotion()
     {
