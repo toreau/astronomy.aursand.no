@@ -22,7 +22,16 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
     public async Task<int> FetchAndStageAsync(string version, CancellationToken ct = default)
     {
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        var payload = await hc.GetStringAsync(CelesTrakOmm, ct);
+        string payload;
+        try
+        {
+            payload = await hc.GetStringAsync(CelesTrakOmm, ct);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"omm: fetch FAIL {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
         var rows = ParseCsv(payload);
         if (RejectPayload(rows)) return 1;
         var errors = Validate(rows, DateTimeOffset.UtcNow);
