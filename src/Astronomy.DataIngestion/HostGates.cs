@@ -841,13 +841,29 @@ public static class HostGates
         // EOP UT1-UTC (USNO ser7) - daily product; refreshed on every naif run.
         var config = AstronomyDbConfig.FromEnvironment();
         var dataRoot = Environment.GetEnvironmentVariable("ASTRONOMY_DATA_ROOT") ?? "/data";
-        var eopExit = await Jobs.RunEopJobAsync(config, dataRoot);
-        Console.WriteLine(eopExit == 0 ? "naif: eop-ut1 refresh OK" : "naif: eop-ut1 refresh FAIL");
+        var eopExit = 1;
+        try
+        {
+            eopExit = await Jobs.RunEopJobAsync(config, dataRoot);
+            Console.WriteLine(eopExit == 0 ? "naif: eop-ut1 refresh OK" : "naif: eop-ut1 refresh FAIL");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: eop-ut1 refresh FAIL {ex.Message.Split('\n')[0]}");
+        }
 
         // EOP C04 (IERS) refresh - daily product, refreshed on every naif run
         // (cheap, ~3.6MB; date-based version restages in place).
-        var c04Exit = await Jobs.RunEopC04JobAsync(config, dataRoot);
-        Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
+        var c04Exit = 1;
+        try
+        {
+            c04Exit = await Jobs.RunEopC04JobAsync(config, dataRoot);
+            Console.WriteLine(c04Exit == 0 ? "naif: eop-c04 refresh OK" : "naif: eop-c04 refresh FAIL");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"naif: eop-c04 refresh FAIL {ex.Message.Split('\n')[0]}");
+        }
 
         // Satellite elements (CelesTrak stations) - daily product; refreshed on
         // every naif run regardless of the 24h throttle (cheap, ~120 rows).

@@ -26,7 +26,16 @@ public static class Jobs
     public static async Task<int> RunEopJobAsync(AstronomyDbConfig config, string dataRoot)
     {
         using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
-        var text = await hc.GetStringAsync(EopSourceUrl);
+        string text;
+        try
+        {
+            text = await hc.GetStringAsync(EopSourceUrl);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"eop: fetch FAIL {ex.Message.Split('\n')[0]}");
+            return 1;
+        }
         var samples = new List<(double Mjd, double Ut1MinusUtc)>();
         foreach (var line in text.Split('\n'))
         {

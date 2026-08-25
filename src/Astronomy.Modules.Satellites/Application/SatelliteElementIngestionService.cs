@@ -117,7 +117,9 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
             if (r.NoradId.Length is < 5 or > 6 || !r.NoradId.All(char.IsDigit))
                 errors.Add(new(i, "norad", r.NoradId));
             var age = (nowUtc - r.EpochUtc).TotalHours;
-            if (age < -2 || age > 48)
+            // CelesTrak station rows are ~24-50 h old at the daily fetch; tolerate up to
+            // 72 h (aligns with the AST-7004 staleness threshold). Was 48 h.
+            if (age < -2 || age > 72)
                 errors.Add(new(i, "epoch", $"{r.EpochUtc:O} (age {age:F1}h)"));
             if (r.MeanMotion is < 0.05 or > 17.0)
                 errors.Add(new(i, "mean_motion", r.MeanMotion.ToString(CultureInfo.InvariantCulture)));
@@ -125,7 +127,9 @@ internal sealed class SatelliteElementIngestionService : ISatelliteElementIngest
                 errors.Add(new(i, "eccentricity", r.Eccentricity.ToString(CultureInfo.InvariantCulture)));
             if (r.Inclination is < 0.0 or > 180.0)
                 errors.Add(new(i, "inclination", r.Inclination.ToString(CultureInfo.InvariantCulture)));
-            if (Math.Abs(r.Bstar) > 0.02)
+            // CelesTrak station rows routinely report |bstar| ~0.0238-0.024; 0.03 keeps the
+            // plausibility guard without rejecting the feed. Was 0.02.
+            if (Math.Abs(r.Bstar) > 0.03)
                 errors.Add(new(i, "bstar", r.Bstar.ToString(CultureInfo.InvariantCulture)));
             if (r.RaOfAscNode is < 0.0 or >= 360.0 || r.ArgOfPericenter is < 0.0 or >= 360.0 || r.MeanAnomaly is < 0.0 or >= 360.0)
                 errors.Add(new(i, "angles", $"{r.RaOfAscNode:F2}/{r.ArgOfPericenter:F2}/{r.MeanAnomaly:F2}"));

@@ -58,6 +58,36 @@ public class OmmIngestionTests
     }
 
     [Fact]
+    public void Validate_AcceptsEpochUpTo72Hours()
+    {
+        var rows = new List<OrbitalElementRow> { Row(Now.AddHours(-50)) };
+        Assert.Empty(SatelliteElementIngestionService.Validate(rows, Now));
+    }
+
+    [Fact]
+    public void Validate_RejectsEpochBeyond72Hours()
+    {
+        var rows = new List<OrbitalElementRow> { Row(Now.AddHours(-80)) };
+        var errors = SatelliteElementIngestionService.Validate(rows, Now);
+        Assert.Contains(errors, e => e.Field == "epoch");
+    }
+
+    [Fact]
+    public void Validate_AcceptsBstarUpTo003()
+    {
+        var rows = new List<OrbitalElementRow> { Row(Now.AddHours(-10), bstar: 0.024) };
+        Assert.Empty(SatelliteElementIngestionService.Validate(rows, Now));
+    }
+
+    [Fact]
+    public void Validate_RejectsBstarBeyond003()
+    {
+        var rows = new List<OrbitalElementRow> { Row(Now.AddHours(-10), bstar: 0.04) };
+        var errors = SatelliteElementIngestionService.Validate(rows, Now);
+        Assert.Contains(errors, e => e.Field == "bstar");
+    }
+
+    [Fact]
     public void Validate_RejectsImplausibleMeanMotion()
     {
         var rows = new List<OrbitalElementRow> { Row(Now.AddHours(-10), mm: "999.0") };
@@ -165,9 +195,9 @@ public class OmmIngestionTests
             Task.FromResult(0);
     }
 
-    private static OrbitalElementRow Row(DateTimeOffset epoch, string norad = "25544", string mm = "15.5", double raan = 64.4) => new(
+    private static OrbitalElementRow Row(DateTimeOffset epoch, string norad = "25544", string mm = "15.5", double raan = 64.4, double bstar = 0.0001) => new(
         "ISS (ZARYA)", norad, epoch,
         double.Parse(mm, System.Globalization.CultureInfo.InvariantCulture),
         0.0007, 51.6, raan, 9.2, 350.8,
-        0.0001, 0.00007, 0, 57913);
+        bstar, 0.00007, 0, 57913);
 }
