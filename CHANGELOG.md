@@ -14,6 +14,14 @@ Infrastructure & ops · Tests · Documentation · Dependencies.
 ### Documentation
 - Docs audit (k8s-research + astronomy): README updated for dual-provider storage (Postgres prod / SQLite dev), uid **150**, and the multi-arch SLSA-attested CI/loop; AGENTS.md gained the SLSA/multi-arch/public note; API.md fixed an internal inconsistency (`satelliteElements` 122 → 22); live-verification.md flagged as a dated snapshot with the ≤1″-vs-≤2″ scope note. See `Work Logs/2026-08-25 k8s-research + astronomy docs audit — gap report`.
 
+### Bugs fixed
+- **satellite-elements sat-gate too strict** (`SatelliteElementIngestionService.Validate`): CelesTrak station rows were rejected daily (`|bstar| 0.0238–0.024 > 0.02`, epochs ~50 h old > 48 h) → the Postgres registry never populated `satellite-elements`. Thresholds relaxed to epoch ≤ **72 h** (aligns with the `AST-7004` staleness threshold) and `|bstar| ≤ 0.03`; added tests (`Validate_AcceptsEpochUpTo72Hours`, `Validate_RejectsEpochBeyond72Hours`, `Validate_AcceptsBstarUpTo003`, `Validate_RejectsBstarBeyond003`). `48bcffb`.
+- **naif core-dumped on an upstream fetch failure** (`Jobs.RunEopJobAsync`): the `maia.usno.navy.mil` ser7 fetch was the only unguarded fetch in `naif` → an `HttpRequestException` aborted the whole job (exit 134) on 2026-08-23, so leap-seconds/eop-c04/star-catalog were never re-staged to Postgres. `NaifAsync` now wraps the eop-ut1/eop-c04 calls (log + continue) and `RunEopJobAsync` guards its own fetch. `48bcffb`.
+- **omm-refresh core-dumped on a CelesTrak fetch failure**: `FetchAndStageAsync` now catches HTTP errors and returns a clean error instead of aborting. `a18c4a4`.
+
+### Infrastructure & ops
+- **Prod dataset registry repopulated (2026-08-25):** manual `naif` run re-staged `eop-c04` `20260825` (20 459 samples), `leap-seconds` `20260825` (28) and `star-catalog-hyg` `v38`; reference gate PASS (q1 ≤ 0.71″); api restarted to load the star catalog. `omm-refresh` then activated `satellite-elements` `20260825` (22 elements, 21 fresh / 1 warn) with the relaxed gate. `eop-ut1` stays `(none)`: USNO currently serves an implausible `UT1-UTC 8.0 s` value, rejected by the existing plausibility guard (revisit when USNO data is sane; IERS Bulletin A fallback is a follow-up). `naif-kernels` Coolify task timeout raised 300 → 1800 s.
+
 ## 2026-08-24
 
 ### Core
