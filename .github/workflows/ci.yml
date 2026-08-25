@@ -112,6 +112,7 @@ jobs:
           push-to-registry: true
       - name: Verify attestation before dispatch
         env:
+          GH_TOKEN: ${{ github.token }}
           DIGEST: ${{ steps.digest.outputs.digest }}
         run: |
           # Public repo -> no token needed. The attestations API can lag the
