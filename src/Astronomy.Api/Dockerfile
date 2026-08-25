@@ -40,7 +40,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
-RUN useradd --uid 10001 --create-home appuser
+# Run as UID 150 — the same UID Skiperator enforces via pod securityContext,
+# so the image's declared user matches the platform (10001 → 150).
+RUN useradd --uid 150 --create-home appuser
 USER appuser
 WORKDIR /app
 COPY --from=build /out .
