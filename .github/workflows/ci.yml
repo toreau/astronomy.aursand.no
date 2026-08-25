@@ -68,6 +68,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -89,6 +91,42 @@ jobs:
               --format '{{.Manifest.Digest}}')
           echo "digest=$d" >> "$GITHUB_OUTPUT"
           echo "resolved $d"
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-amd64
+          format: spdx-json
+          output-file: report.spdx.json
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/toreau/astronomy-api
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          push-to-registry: true
+      - name: Attest SBOM
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/toreau/astronomy-api
+          subject-digest: ${{ steps.digest.outputs.digest }}
+          sbom-path: report.spdx.json
+          push-to-registry: true
+      - name: Verify attestation before dispatch
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          # Public repo -> no token needed. The attestations API can lag the
+          # push-to-registry upload a moment, so retry a few times.
+          for i in 1 2 3 4 5; do
+            gh attestation verify "oci://ghcr.io/toreau/astronomy-api@${DIGEST}" \
+              -R toreau/astronomy.aursand.no \
+              --predicate-type https://slsa.dev/provenance/v1 \
+              && { echo "SLSA provenance verified"; break; }
+            [ "$i" -lt 5 ] && sleep 5
+          done
+          gh attestation verify "oci://ghcr.io/toreau/astronomy-api@${DIGEST}" \
+            -R toreau/astronomy.aursand.no \
+            --predicate-type https://spdx.dev/Document/v2.3
+          echo "attestations verified for ${DIGEST}"
       - name: Dispatch k8s-research digest bump
         env:
           GH_TOKEN: ${{ secrets.K8S_RESEARCH_PAT }}
