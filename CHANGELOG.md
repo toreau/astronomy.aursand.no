@@ -4,6 +4,11 @@ All notable changes, grouped by date. Format inspired by Keep a Changelog
 (keepachangelog.com); sections: Core · Bugs fixed · Performance ·
 Infrastructure & ops · Tests · Documentation · Dependencies.
 
+## 2026-08-26
+
+### Infrastructure & ops
+- **GitHub Actions pinned by SHA** (supply-chain hardening): `actions/checkout`, `actions/setup-dotnet`, `actions/upload-artifact`, `actions/attest`, `docker/setup-buildx-action`, `docker/login-action`, `docker/build-push-action`, `anchore/sbom-action` — all `uses:` now reference immutable commit SHAs (tag kept as a `# vX` comment). Dependabot gained a `github-actions` ecosystem entry (weekly, grouped) so bumps arrive as reviewable PRs — first result: PR #5 «bump the github-actions group with 6 updates». `e1fa387`.
+
 ## 2026-08-25
 
 ### Infrastructure & ops
