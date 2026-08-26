@@ -10,6 +10,11 @@ and **SLSA-attests** the merged manifest (build provenance + SPDX SBOM,
 `actions/attest`); the repo is **public** (GitHub artifact attestations require
 public/Enterprise). The k8s-research GitOps loop gates digest bumps on the
 attestation and enforces it in-cluster via Kyverno (`ImageValidatingPolicy`).
+CI is a **thin caller** into the reusable workflow library `toreau/gh-workflows`
+(`@v1`): `dotnet-ci`, `container-build-push`, `container-merge-attest`,
+`dispatch`; `native-watcher` calls `native-pin-watcher`. The in-cluster Kyverno
+subject matches the shared `container-merge-attest` workflow signer (not
+`ci.yml`), because attestations are created inside that reusable workflow.
 
 ## Commands
 
@@ -45,8 +50,8 @@ attestation and enforces it in-cluster via Kyverno (`ImageValidatingPolicy`).
 - Accuracy-engine majors (CosineKitty.AstronomyEngine, One_Sgp4) are deliberate
   re-validation events; Dependabot isolates them in their own group, never bundled.
 - Dockerfile pins the cspice fork commit `53bce32` + sed patch on `SpiceZpr.h` lines
-  3252–3255; erfa `v2.0.1`. `native-watcher` workflow (weekly) opens an issue when
-  upstreams move.
+  3252–3255; erfa `v2.0.1`. `native-watcher` (weekly, `native-pin-watcher` reusable
+  workflow) opens an issue when upstreams move.
 - Coolify scheduled-task commands are capped at 255 chars; Coolify native health checks stay
   **off** (no curl in the image — apt is very slow on the host).
 - Volume `/data/astronomy` is root-owned → the worker runs as root; api runs rootless uid **150** (`useradd --uid 150` in the Dockerfile).

@@ -7,6 +7,19 @@ Infrastructure & ops · Tests · Documentation · Dependencies.
 ## 2026-08-26
 
 ### Infrastructure & ops
+- **CI migrated to the reusable workflow library `toreau/gh-workflows` (`@v1`)** (PR #6–#9): `build-test` → `dotnet-ci`; `docker` matrix → `container-build-push` (runner input per arch; `runs-on: ${{ inputs.runner }}` proven at runtime); `merge` → `container-merge-attest` (outputs `digest`) + new `dispatch` job → `dispatch`; `native-watcher` → `native-pin-watcher`. `ci.yml` 139 → ~60 lines.
+- **Full E2E verified** with the reusable pipelines (astronomy `f73994a`): multi-arch build → attest → verify → dispatch → k8s-research gate (`attestation-gate`) + bump (`digest-bump`) commit `f5b5b1d` → ArgoCD auto-sync → **Kyverno admitted the new pod** → `make astronomy-verify` ALL OK.
+- **Kyverno attestation subject updated** to the shared `container-merge-attest` workflow signer (`…gh-workflows/.github/workflows/container-merge-attest.yml@refs/tags/v1`) — attestations are now created inside the reusable workflow, so the certificate's build signer is that workflow, not `ci.yml` (k8s-research `cluster/kyverno/require-astronomy-attestation.yaml`).
+
+### Bugs fixed
+- **`container-merge-attest` (R4) resolved the multi-arch digest from a two-line `$first`** (`awk|cut` processed multiline `merge-tags` line-by-line → `invalid reference format`); fixed with `xargs` collapse in gh-workflows.
+- **R4 `gh attestation verify` failed** on attestations created inside a reusable workflow (`verifying with issuer "sigstore.dev"`, cli/cli#9045 — the build signer is now the reusable workflow); fixed by passing `--signer-workflow`.
+- **R5 `dispatch` sent `client_payload` as a string** (HTTP 422 «not an object»); fixed by building the JSON body with `jq` and piping via `gh api --input -`.
+- **`native-pin-watcher` (R8) `grep` parsed a `--`-prefixed pattern as an option** (`--branch v2.0.1` → empty pinned, silent in the pipeline); fixed with `grep -e`. This was a **latent bug in the original `native-watcher`** (erfa pin was never extracted).
+
+## 2026-08-26
+
+### Infrastructure & ops
 - **GitHub Actions pinned by SHA** (supply-chain hardening): `actions/checkout`, `actions/setup-dotnet`, `actions/upload-artifact`, `actions/attest`, `docker/setup-buildx-action`, `docker/login-action`, `docker/build-push-action`, `anchore/sbom-action` — all `uses:` now reference immutable commit SHAs (tag kept as a `# vX` comment). Dependabot gained a `github-actions` ecosystem entry (weekly, grouped) so bumps arrive as reviewable PRs — **PR #5 «bump the github-actions group with 6 updates» was reviewed and merged** (`64e90ad`), CI green. `e1fa387`.
 
 ## 2026-08-25
