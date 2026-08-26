@@ -17,3 +17,13 @@ updates:
         patterns:
           - "CosineKitty.AstronomyEngine"
           - "One_Sgp4"
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: sunday
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
