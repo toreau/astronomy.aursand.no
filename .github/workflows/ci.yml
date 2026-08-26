@@ -40,77 +40,35 @@ jobs:
 
   merge:
     needs: docker
-    runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
       id-token: write
       attestations: write
-    steps:
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e  # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Merge multi-arch manifest
-        run: |
-          docker buildx imagetools create \
-            -t ghcr.io/toreau/astronomy-api:main-${{ github.sha }} \
-            -t ghcr.io/toreau/astronomy-api:latest \
-            ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-amd64 \
-            ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-arm64
-      - name: Resolve multi-arch digest
-        id: digest
-        run: |
-          d=$(docker buildx imagetools inspect ghcr.io/toreau/astronomy-api:main-${{ github.sha }} \
-              --format '{{.Manifest.Digest}}')
-          echo "digest=$d" >> "$GITHUB_OUTPUT"
-          echo "resolved $d"
-      - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-        with:
-          image: ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-amd64
-          format: spdx-json
-          output-file: report.spdx.json
-      - name: Attest build provenance
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4
-        with:
-          subject-name: ghcr.io/toreau/astronomy-api
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          push-to-registry: true
-      - name: Attest SBOM
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4
-        with:
-          subject-name: ghcr.io/toreau/astronomy-api
-          subject-digest: ${{ steps.digest.outputs.digest }}
-          sbom-path: report.spdx.json
-          push-to-registry: true
-      - name: Verify attestation before dispatch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DIGEST: ${{ steps.digest.outputs.digest }}
-        run: |
-          # Public repo -> no token needed. The attestations API can lag the
-          # push-to-registry upload a moment, so retry a few times.
-          for i in 1 2 3 4 5; do
-            gh attestation verify "oci://ghcr.io/toreau/astronomy-api@${DIGEST}" \
-              -R toreau/astronomy.aursand.no \
-              --predicate-type https://slsa.dev/provenance/v1 \
-              && { echo "SLSA provenance verified"; break; }
-            [ "$i" -lt 5 ] && sleep 5
-          done
-          gh attestation verify "oci://ghcr.io/toreau/astronomy-api@${DIGEST}" \
-            -R toreau/astronomy.aursand.no \
-            --predicate-type https://spdx.dev/Document/v2.3
-          echo "attestations verified for ${DIGEST}"
-      - name: Dispatch k8s-research digest bump
-        env:
-          GH_TOKEN: ${{ secrets.K8S_RESEARCH_PAT }}
-        run: |
-          gh api repos/toreau/k8s-research/dispatches \
-            -f event_type=astro-image-pushed \
-            -f "client_payload[sha]=${{ github.sha }}" \
-            -f "client_payload[digest]=${{ steps.digest.outputs.digest }}"
-          echo "dispatched astro-image-pushed (sha=${{ github.sha }})"
+    uses: toreau/gh-workflows/.github/workflows/container-merge-attest.yml@v1
+    with:
+      image: ghcr.io/toreau/astronomy-api
+      per-arch-tags: |
+        ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-amd64
+        ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-arm64
+      merge-tags: |
+        ghcr.io/toreau/astronomy-api:main-${{ github.sha }}
+        ghcr.io/toreau/astronomy-api:latest
+      attestation-repo: toreau/astronomy.aursand.no
+      sbom-image: ghcr.io/toreau/astronomy-api:main-${{ github.sha }}-amd64
+      sbom: true
+      verify: true
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
+
+  dispatch:
+    needs: merge
+    if: github.ref == 'refs/heads/main'
+    uses: toreau/gh-workflows/.github/workflows/dispatch.yml@v1
+    with:
+      target-repo: toreau/k8s-research
+      event-type: astro-image-pushed
+      payload: '{"sha":"${{ github.sha }}","digest":"${{ needs.merge.outputs.digest }}"}'
+    secrets:
+      token: ${{ secrets.K8S_RESEARCH_PAT }}
