@@ -9,10 +9,10 @@ CI builds **multi-arch** (amd64+arm64) images to `ghcr.io/toreau/astronomy-api`
 and **SLSA-attests** the merged manifest (build provenance + SPDX SBOM,
 `actions/attest`); the repo is **public** (GitHub artifact attestations require
 public/Enterprise). The k8s-research GitOps loop gates digest bumps on the
-attestation and enforces it in-cluster via Kyverno (`ImageValidatingPolicy`).
+attestation and enforces it in-cluster via the Sigstore Policy Controller (`ClusterImagePolicy`).
 CI is a **thin caller** into the reusable workflow library `toreau/gh-workflows`
 (`@v1`): `dotnet-ci`, `container-build-push`, `container-merge-attest`,
-`dispatch`; `native-watcher` calls `native-pin-watcher`. The in-cluster Kyverno
+`dispatch`; `native-watcher` calls `native-pin-watcher`. The in-cluster Policy Controller
 subject matches the shared `container-merge-attest` workflow signer (not
 `ci.yml`), because attestations are created inside that reusable workflow.
 
