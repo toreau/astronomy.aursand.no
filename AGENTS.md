@@ -5,16 +5,21 @@ bright stars and satellites, with accuracy tiers validated against JPL Horizons 
 .NET 10 ASP.NET Core **modular monolith**. Coolify: api `jk87r6rrgoegw3s6v3hz4ulu`
 (rootless, :8080, public) + worker `p47lnt171dhf6kec7dn2jbtj` (root, no FQDN; scheduled
 refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
-CI builds **multi-arch** (amd64+arm64) images to `ghcr.io/toreau/astronomy-api`
-and **SLSA-attests** the merged manifest (build provenance + SPDX SBOM,
-`actions/attest`); the repo is **public** (GitHub artifact attestations require
-public/Enterprise). The k8s-research GitOps loop gates digest bumps on the
-attestation and enforces it in-cluster via the Sigstore Policy Controller (`ClusterImagePolicy`).
+CI builds a single **arm64** image to `ghcr.io/toreau/astronomy-api`
+(`main-<sha>`, `latest`) and **SLSA-attests** it directly in `ci.yml` (build
+provenance + SPDX SBOM via `actions/attest`); the repo is **public** (GitHub
+artifact attestations require public/Enterprise). The k8s-research GitOps loop
+gates digest bumps on the attestation and enforces it in-cluster via the
+Sigstore Policy Controller (`ClusterImagePolicy`).
 CI is a **thin caller** into the reusable workflow library `toreau/gh-workflows`
-(`@v1`): `dotnet-ci`, `container-build-push`, `container-merge-attest`,
-`dispatch`; `native-watcher` calls `native-pin-watcher`. The in-cluster Policy Controller
-subject matches the shared `container-merge-attest` workflow signer (not
-`ci.yml`), because attestations are created inside that reusable workflow.
+(`@v1`): `dotnet-ci`, `container-build-push`, `dispatch`; `native-watcher`
+calls `native-pin-watcher`. The in-cluster Policy Controller subject matches the
+**astronomy `ci.yml` workflow signer**
+(`https://github.com/toreau/astronomy.aursand.no/.github/workflows/ci.yml@refs/heads/main`),
+because attestations are created directly in that workflow. Renaming or moving
+`ci.yml` changes the signer identity and breaks in-cluster admission until
+`subjectRegExp` in k8s-research `cluster/attestations/values-trust-policies.yaml`
+is updated.
 
 ## Commands
 

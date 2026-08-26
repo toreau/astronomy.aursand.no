@@ -167,11 +167,11 @@ repo (dockerfile build pack), sharing a `/data` volume for kernels and datasets:
 The dataset **registry** lives in PostgreSQL (`astronomy-db`, Coolify) in
 production and SQLite in dev/tests — see "Storage" below.
 
-CI builds **multi-arch** images (amd64 + arm64 matrix) to
-`ghcr.io/toreau/astronomy-api` (`main-<sha>`, `latest`) and **SLSA-attests** the
-merged manifest (build provenance + SPDX SBOM via `actions/attest`), verifying
-producer-side before dispatching a digest bump to the k8s-research GitOps repo
-(where Kyverno enforces the attestation at pod admission). Production itself
+CI builds a single **arm64** image to `ghcr.io/toreau/astronomy-api`
+(`main-<sha>`, `latest`) and **SLSA-attests** it directly in `ci.yml` (build
+provenance + SPDX SBOM via `actions/attest`), verifying producer-side before
+dispatching a digest bump to the k8s-research GitOps repo (where the Sigstore
+Policy Controller enforces the attestation at pod admission). Production itself
 builds from git via Coolify. The repo is **public** (GitHub artifact
 attestations require public or Enterprise Cloud).
 
