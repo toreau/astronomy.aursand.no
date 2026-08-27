@@ -96,7 +96,7 @@ jobs:
     uses: toreau/gh-workflows/.github/workflows/dispatch.yml@v1
     with:
       target-repo: toreau/k8s-research
-      event-type: astro-image-pushed
-      payload: '{"sha":"${{ github.sha }}","digest":"${{ needs.attest.outputs.digest }}"}'
+      event-type: app-image-pushed
+      payload: '{"app":"astronomy","sha":"${{ github.sha }}","digest":"${{ needs.attest.outputs.digest }}"}'
     secrets:
       token: ${{ secrets.K8S_RESEARCH_PAT }}
