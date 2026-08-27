@@ -14,6 +14,8 @@ jobs:
       issue-title: "Native dependency update available (erfa/cspice)"
       pins: >-
         [
-          {"name":"erfa","type":"tag","pattern":"--branch v[0-9.]+","extract":"s/--branch //","upstream":"liberfa/erfa"},
-          {"name":"cspice","type":"commit","pattern":"origin [0-9a-f]{40}","extract":"s/origin //","upstream":"arturania/cspice"}
+          {"name":"erfa","type":"tag","pattern":"--branch (v[0-9.]+)","group":1,"upstream":"liberfa/erfa"},
+          {"name":"cspice","type":"commit","pattern":"origin ([0-9a-f]{40})","group":1,"upstream":"arturania/cspice"}
         ]
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
