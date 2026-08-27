@@ -100,3 +100,4 @@ jobs:
       payload: '{"app":"astronomy","sha":"${{ github.sha }}","digest":"${{ needs.attest.outputs.digest }}"}'
     secrets:
       token: ${{ secrets.K8S_RESEARCH_PAT }}
+      hmac-secret: ${{ secrets.DISPATCH_HMAC_KEY }}
