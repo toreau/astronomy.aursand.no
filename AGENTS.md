@@ -5,21 +5,25 @@ bright stars and satellites, with accuracy tiers validated against JPL Horizons 
 .NET 10 ASP.NET Core **modular monolith**. Coolify: api `jk87r6rrgoegw3s6v3hz4ulu`
 (rootless, :8080, public) + worker `p47lnt171dhf6kec7dn2jbtj` (root, no FQDN; scheduled
 refreshes + kernel-reload contract). Full docs: wiki `Services/astronomy`.
-CI builds a single **arm64** image to `ghcr.io/toreau/astronomy-api`
-(`main-<sha>`, `latest`) and **SLSA-attests** it directly in `ci.yml` (build
-provenance + SPDX SBOM via `actions/attest`); the repo is **public** (GitHub
-artifact attestations require public/Enterprise). The k8s-research GitOps loop
-gates digest bumps on the attestation and enforces it in-cluster via the
-Sigstore Policy Controller (`ClusterImagePolicy`).
-CI is a **thin caller** into the reusable workflow library `toreau/gh-workflows`
-(`@v1`): `dotnet-ci`, `container-build-push`, `dispatch`; `native-watcher`
-calls `native-pin-watcher`. The in-cluster Policy Controller subject matches the
-**astronomy `ci.yml` workflow signer**
-(`https://github.com/toreau/astronomy.aursand.no/.github/workflows/ci.yml@refs/heads/main`),
-because attestations are created directly in that workflow. Renaming or moving
-`ci.yml` changes the signer identity and breaks in-cluster admission until
-`subjectRegExp` in k8s-research `cluster/attestations/values-trust-policies.yaml`
-is updated.
+CI builds a single **arm64** image to `ghcr.io/toreau/astronomy-api` via the
+trusted builder: image production uses
+`toreau/gh-workflows/.github/workflows/container-build-attest.yml@373df7517487bd20ac55a0986926677c0ddcbcf6`,
+with build configuration from `.github/container-build.json`. The builder runs
+only on `main` after `build-test` succeeds and emits `main-<sha>` with an exact
+digest; it does not produce `latest`. The trusted builder generates the
+build-provenance and SPDX-SBOM attestations, so the **signer identity is the
+trusted builder** (the reusable workflow at its trusted revision), not this
+repo's `ci.yml`. The repository is public.
+CI is a **thin caller** into the reusable workflow library `toreau/gh-workflows`:
+`dotnet-ci` (`build-test`), `container-build-attest` (trusted builder, pinned to
+the trusted revision), `dispatch`; `native-watcher` calls `native-pin-watcher`.
+The k8s-research GitOps consumer keeps this app **damped** (`attestation: false`
+in `apps/astronomy/meta.yaml`): promotion authorization is the trusted expected
+image to exact digest binding. Provenance is produced by the producer but is
+**not** currently required for this app's promotion. There is no signer-specific
+in-cluster admission policy for this app in current k8s-research policy
+(`policy.images` covers only the separate reference app; admission hardening is
+S11-owned).
 
 ## Commands
 
