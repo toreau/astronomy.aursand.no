@@ -1,0 +1,6 @@
+{
+  "image": "ghcr.io/toreau/astronomy-api",
+  "dockerfile": "src/Astronomy.Api/Dockerfile",
+  "context": ".",
+  "platform": "linux/arm64"
+}
