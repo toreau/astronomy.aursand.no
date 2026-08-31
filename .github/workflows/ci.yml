@@ -21,7 +21,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    uses: toreau/gh-workflows/.github/workflows/container-build-attest.yml@373df7517487bd20ac55a0986926677c0ddcbcf6
+    uses: toreau/gh-workflows/.github/workflows/container-build-attest.yml@081be9c4f286011a8497e205b10dfb58c5b37463
 
   dispatch:
     needs: builder
