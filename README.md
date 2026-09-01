@@ -167,13 +167,17 @@ repo (dockerfile build pack), sharing a `/data` volume for kernels and datasets:
 The dataset **registry** lives in PostgreSQL (`astronomy-db`, Coolify) in
 production and SQLite in dev/tests — see "Storage" below.
 
-CI builds a single **arm64** image to `ghcr.io/toreau/astronomy-api`
-(`main-<sha>`, `latest`) and **SLSA-attests** it directly in `ci.yml` (build
-provenance + SPDX SBOM via `actions/attest`), verifying producer-side before
-dispatching a digest bump to the k8s-research GitOps repo (where the Sigstore
-Policy Controller enforces the attestation at pod admission). Production itself
-builds from git via Coolify. The repo is **public** (GitHub artifact
-attestations require public or Enterprise Cloud).
+On `main`, CI invokes the trusted central builder (`container-build-attest.yml`),
+which builds a single **arm64** image (`ghcr.io/toreau/astronomy-api`, `main-<sha>`),
+generates SLSA provenance and an SPDX SBOM, and returns the digest. CI then dispatches
+`app-image-pushed` `{app, sha, digest}` to k8s-research. Astronomy is **damped** there
+(`attestation: false`): promotion authorization uses trusted metadata, the expected image,
+and exact digest existence/binding. Provenance is produced by the trusted builder but is
+not used in Astronomy's promotion authorization. The k8s-research copy is not
+admission-enforced; current admission scope covers the separate reference application,
+frosta-historielag. Production itself builds from git via Coolify; k8s-research receives
+the trusted-builder image/digest for the separate local GitOps deployment. The repository
+is public.
 
 Environment: `ASTRONOMY_DB_PROVIDER` (`sqlite`|`postgres`, default `sqlite`),
 `ASTRONOMY_DB_PATH` (default `/data/astronomy.db`, SQLite),
