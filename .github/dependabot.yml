@@ -23,6 +23,8 @@ updates:
       interval: weekly
       day: sunday
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "toreau/gh-workflows/.github/workflows/container-build-attest.yml"
     groups:
       github-actions:
         patterns:
