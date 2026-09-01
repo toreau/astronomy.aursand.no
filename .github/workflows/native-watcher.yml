@@ -8,7 +8,7 @@ permissions:
   issues: write
 jobs:
   check:
-    uses: toreau/gh-workflows/.github/workflows/native-pin-watcher.yml@v1
+    uses: toreau/gh-workflows/.github/workflows/native-pin-watcher.yml@19c65c9683f649cab7d3831a3bbc66451e756ebe
     with:
       dockerfile: src/Astronomy.Api/Dockerfile
       issue-title: "Native dependency update available (erfa/cspice)"
