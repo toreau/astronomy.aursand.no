@@ -6,6 +6,8 @@ on:
 
 jobs:
   build-test:
+    permissions:
+      contents: read
     uses: toreau/gh-workflows/.github/workflows/dotnet-ci.yml@19c65c9683f649cab7d3831a3bbc66451e756ebe
     with:
       solution: Astronomy.slnx
@@ -26,6 +28,7 @@ jobs:
   dispatch:
     needs: builder
     if: github.ref == 'refs/heads/main' && needs.builder.result == 'success'
+    permissions: {}
     uses: toreau/gh-workflows/.github/workflows/dispatch.yml@19c65c9683f649cab7d3831a3bbc66451e756ebe
     with:
       target-repo: toreau/k8s-research
